@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-store">
+<title>本机中文语音测试</title>
+<style>
+body{font:16px system-ui,sans-serif;max-width:860px;margin:42px auto;padding:0 22px;background:#f4f7fb;color:#17283f}
+main{background:white;border-radius:20px;padding:28px;box-shadow:0 8px 36px #17345d12}
+h1{font-size:28px}
+textarea{box-sizing:border-box;width:100%;min-height:160px;padding:14px;font:18px/1.7 system-ui;border:1px solid #a9bace;border-radius:10px}
+button,select,a{font:inherit}
+button,select{padding:10px;margin:8px 6px 8px 0;border-radius:8px;border:1px solid #a9bace}
+button{cursor:pointer;background:#e8f1ff}
+button.primary{background:#1b60ca;color:white}
+button:disabled{opacity:.5;cursor:wait}
+audio{width:100%;margin-top:18px}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f0f4f9;padding:14px;border-radius:10px}
+small{color:#52647a}
+#status{padding:14px 0;font-weight:700;font-size:20px;white-space:pre-line}
+progress{width:100%}
+.engine-field{display:block;padding:12px 16px;background:#eaf1ff;border:2px solid #759de0;border-radius:12px;margin:16px 0;font-weight:700}
+.engine-field select{font-weight:700}
+#engine-note{display:block;font-weight:400;margin-top:6px}
+#phonon-voice-field{display:none;padding:14px 16px;background:#eef8f0;border:2px solid #5a9e6f;border-radius:12px;margin:12px 0;font-weight:700}
+#phonon-voice{min-width:min(100%,420px);font-weight:700;font-size:16px}
+#phonon-voice-field .hint{display:block;font-weight:400;margin-top:6px;color:#2d5a3a}
+main:has(#engine option[value="phonon"]:checked) #phonon-voice-field{display:block}
+main:has(#engine option[value="phonon"]:checked) #kokoro-voice-field{display:none}
+#download[hidden],#progress[hidden]{display:none!important}
+</style>
+<main>
+<h1>本机中文语音测试</h1>
+<p>中文 / 中英混合：浏览器内 Kokoro v1.1-zh · FP32 · 优先 WebGPU<br>
+英文：默认 Phonon 31m · 本机 CPU，也可切换 Kokoro<br>
+<small>仅本机访问。Kokoro 首次加载需下载模型；Phonon 使用本机已有英文模型和官方音色。</small></p>
+<label for="text">朗读文本（最多 1500 字；Phonon 最多 1000 字）</label>
+<textarea id="text" maxlength="1500">你好，这是一段中文语音合成测试。Welcome to the local Chinese TTS demo.</textarea>
+<div>
+  <button type="button" id="example-zh">中文示例</button>
+  <button type="button" id="example-mix">中英混合</button>
+  <button type="button" id="example-en">英文示例</button>
+</div>
+<label class="engine-field" for="engine">合成引擎
+  <select id="engine">
+    <option value="phonon">Phonon 31m · 英文</option>
+    <option value="kokoro" selected>Kokoro · 本地 TTS</option>
+  </select>
+  <small id="engine-note"></small>
+</label>
+<label id="kokoro-voice-field">Kokoro 音色
+  <select id="voice">
+    <option value="zf_001">zf_001 中文女声</option>
+    <option value="zf_002">zf_002 中文女声</option>
+    <option value="zm_009">zm_009 中文男声</option>
+    <option value="zm_010">zm_010 中文男声</option>
+    <option value="af_maple">af_maple 英文女声</option>
+  </select>
+</label>
+<label id="phonon-voice-field" for="phonon-voice">Phonon 官方英文音色（38 个）
+  <select id="phonon-voice">
+      <optgroup label="默认">
+        <option value="default" data-name="default" selected>默认 · default</option>
+      </optgroup>
+      <optgroup label="美式女声">
+        <option value="NbpkqMVS3CJeq2j8" data-name="Zoey">美式女声 · Zoey</option>
+        <option value="NIWIOv5vTi5eRMj8" data-name="Juniper">美式女声 · Juniper</option>
+        <option value="vjFyp2BcCyTlUmYb" data-name="Everly">美式女声 · Everly</option>
+        <option value="4SZHfMpw-p46Ywgs" data-name="Harper">美式女声 · Harper</option>
+        <option value="bXwrkHhURL1VFJdG" data-name="Hadley">美式女声 · Hadley</option>
+        <option value="nGzMHMPAWGaJFHOo" data-name="Delia">美式女声 · Delia</option>
+      </optgroup>
+      <optgroup label="美式男声">
+        <option value="LMDIYE0Oa377Qh6Z" data-name="Easton">美式男声 · Easton</option>
+        <option value="40QrMVgAxFiUnP9f" data-name="Micah">美式男声 · Micah</option>
+        <option value="0zLApsZfVLLNaEGl" data-name="Trevor">美式男声 · Trevor</option>
+        <option value="_6Aslh2DxfmnRLmP" data-name="Russell">美式男声 · Russell</option>
+        <option value="qIxlZ7Ei8KvWlyQH" data-name="Preston">美式男声 · Preston</option>
+        <option value="d9XCyhjo4JhkHF1d" data-name="Miles">美式男声 · Miles</option>
+      </optgroup>
+      <optgroup label="英式女声">
+        <option value="6PWnV0Nq4wu7RVBT" data-name="Maeve">英式女声 · Maeve</option>
+        <option value="GgfEkEJtxZR7gnpy" data-name="Freya">英式女声 · Freya</option>
+        <option value="uem82D50GRv2Dwma" data-name="Pippa">英式女声 · Pippa</option>
+        <option value="y9bQqIDnyxwqK01t" data-name="Elodie-Rose">英式女声 · Elodie-Rose</option>
+        <option value="gDT1nz7Ie36ZhL-C" data-name="Imogen">英式女声 · Imogen</option>
+        <option value="m9MxpY6IUGXtWp76" data-name="Lottie">英式女声 · Lottie</option>
+        <option value="gfP44RlHwr2kEwk7" data-name="Bryony">英式女声 · Bryony</option>
+      </optgroup>
+      <optgroup label="英式男声">
+        <option value="X6NceqF285Gr04gb" data-name="Alfie">英式男声 · Alfie</option>
+        <option value="YyKcxPG7iIgS3jsK" data-name="Hugh">英式男声 · Hugh</option>
+        <option value="zUCxzrOrugTSis03" data-name="Edwin">英式男声 · Edwin</option>
+        <option value="JOW0vchyswkQUMDS" data-name="Spencer">英式男声 · Spencer</option>
+        <option value="dME3IWyZBvmh1n1q" data-name="Toby">英式男声 · Toby</option>
+        <option value="Zn7g6NxLqXlJb7Qi" data-name="Teddy">英式男声 · Teddy</option>
+      </optgroup>
+      <optgroup label="角色">
+        <option value="xPDpsV3F592srkjA" data-name="Captain Silas Blackwater">角色 · Captain Silas Blackwater</option>
+        <option value="nOykTmcH9ydsGGIc" data-name="Morwenna of the Deep">角色 · Morwenna of the Deep</option>
+        <option value="lX3LavMNdlIbgEHH" data-name="Old Mortlake">角色 · Old Mortlake</option>
+        <option value="dGyGDKo2osj7h3s7" data-name="Azgorath">角色 · Azgorath</option>
+        <option value="cXoIXJ2llS8S0WOW" data-name="Fennick the Young Elf">角色 · Fennick the Young Elf</option>
+        <option value="GXaSqMEmOg12OIYb" data-name="The Thing Under the Stairs">角色 · The Thing Under the Stairs</option>
+        <option value="xO8xQo3BrB8FuI6J" data-name="Vyrmathrax the Ancient">角色 · Vyrmathrax the Ancient</option>
+        <option value="cYtsRSxV5q9IMehn" data-name="Grub the Ogre">角色 · Grub the Ogre</option>
+        <option value="gSgG5Tor0GPEnqzC" data-name="Master Aldric">角色 · Master Aldric</option>
+        <option value="NIWoEurJHMJjyUTe" data-name="The Snow Queen">角色 · The Snow Queen</option>
+        <option value="y2eiKxtQo2B67deU" data-name="Sir Bramwell">角色 · Sir Bramwell</option>
+        <option value="QXNr0SvkukLB4wPq" data-name="Fairy Godmother">角色 · Fairy Godmother</option>
+      </optgroup>
+  </select>
+  <small class="hint">切到 Phonon 后在此选择 Zoey、Easton、Maeve 等官方音色；默认是 default。</small>
+</label>
+<label>语速 <select id="speed"><option value="0.85">0.85×</option><option value="1" selected>1×</option><option value="1.15">1.15×</option></select></label>
+<div>
+  <button class="primary" id="generate">合成并播放</button>
+  <a id="download" hidden download="chinese-tts.wav">下载 WAV</a>
+</div>
+<div id="status" role="status" aria-live="polite">就绪。英文默认 Phonon，可在绿色框中选择官方音色；中文 / 混合默认 Kokoro。</div>
+<progress id="progress" max="100" value="0" hidden></progress>
+<audio id="player" controls></audio>
+<pre id="details">尚未合成</pre>
+<small>中文继续使用浏览器内 Kokoro；WebGPU 不可用时回退 WASM。英文 Phonon 请求仅发送到本机 http://127.0.0.1:8790，不上传互联网。Phonon 仅英文，语速固定 1×。不调用 8880。<br>
+<a href="http://127.0.0.1:8790/compare.html" target="_blank" rel="noopener">Phonon / Kokoro 同文案试听对比</a></small>
+</main>
+<script type="module" src="/app.js"></script>
+<script type="module" src="/phonon-bridge.js?v=20261112-18"></script>
+</html>

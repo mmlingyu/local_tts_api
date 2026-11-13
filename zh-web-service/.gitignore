@@ -1,0 +1,9 @@
+node_modules/
+public/kokoro/voices/*.bin
+public/ort/
+public/app.js
+public/app.js.map
+test-output/
+browser-profile/
+service-state.json
+*.log

@@ -1,0 +1,34 @@
+# Dependencies and secrets
+node_modules/
+venv/
+.venv/
+.env
+.env.*
+!.env.example
+
+# Logs and local state
+*.log
+service-state.json
+.DS_Store
+Thumbs.db
+
+# Models, runtimes, voice weights, ORT
+models/
+runtime/
+cache/
+public/ort/
+public/kokoro/
+public/app.js
+**/*.gguf
+**/*.safetensors
+**/*.wasm
+**/*.bin
+!**/package-lock.json
+
+# Test / audio artifacts
+test-output/
+compare-audio/
+*.wav
+*.mp3
+*.ogg
+*.flac
