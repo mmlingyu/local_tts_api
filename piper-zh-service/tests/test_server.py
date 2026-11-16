@@ -313,15 +313,16 @@ def test_pocket_engine_is_opt_in_and_rejects_unsupported_languages(server):
         def voices(self) -> dict:
             return {"engine": "pocket", "voices": [{"voice": "alba", "language": "english", "gender": "unknown"}]}
 
-        def synthesize(self, text: str, language: str, voice: str) -> Synthesis:
-            self.calls.append((text, language, voice))
+        def synthesize(self, text: str, language: str, voice: str, variant: str) -> Synthesis:
+            self.calls.append((text, language, voice, variant))
             return Synthesis(
                 wav=tone_wav(rate=24000),
                 sample_rate=24000,
                 duration_seconds=0.4,
                 synth_seconds=0.05,
                 phoneme_type="pocket",
-                model_id=voice,
+                model_id=variant,
+                voice_name=voice,
                 language=language,
                 engine_header="Pocket-TTS",
             )
@@ -332,7 +333,9 @@ def test_pocket_engine_is_opt_in_and_rejects_unsupported_languages(server):
     assert status == 200
     assert headers["X-Engine"] == "Pocket-TTS"
     assert headers["X-Sample-Rate"] == "24000"
-    assert httpd.service_state.pocket.calls == [("Hello.", "english", "alba")]
+    assert httpd.service_state.pocket.calls == [("Hello.", "english", "alba", "english_18m_2026-10")]
+    assert headers["X-Model"] == "english_18m_2026-10"
+    assert headers["X-Voice"] == "alba"
     assert engine.calls == []
     status, _headers, body = request(base, "/api/tts", {"text": "你好。"})
     assert status == 200
@@ -343,6 +346,13 @@ def test_pocket_engine_is_opt_in_and_rejects_unsupported_languages(server):
     status, _headers, body = request(base, "/api/tts", {"engine": "pocket", "text": "Hello.", "voice": "hf://kyutai/tts-voices/x.wav"})
     assert status == 400
     assert json.loads(body)["code"] == "unknown_voice"
+    status, _headers, body = request(base, "/api/tts", {"engine": "pocket", "text": "Hello.", "variant": "english"})
+    assert status == 400
+    assert json.loads(body)["code"] == "variant_not_enabled"
+    status, _headers, body = request(base, "/api/tts", {"engine": "pocket", "text": "Hello.", "variant": "english_7m_2026-10"})
+    assert status == 400
+    status, _headers, body = request(base, "/api/tts", {"text": "你好。", "variant": "english_18m_2026-10"})
+    assert status == 400
     status, _headers, body = request(base, "/api/tts", {"engine": "other", "text": "Hello."})
     assert status == 400
     assert json.loads(body)["code"] == "bad_engine"

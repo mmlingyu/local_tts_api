@@ -10,5 +10,5 @@ Write-Host "Pocket venv is ready. Windows PyTorch wheels are CPU builds."
 Write-Host "Expect about 2 GB or more for torch, plus the gated model download."
 Write-Host "Accept https://huggingface.co/kyutai/pocket-tts and run huggingface-cli login before -Confirm."
 if ($Confirm) {
-  & .\.venv\Scripts\python.exe -m pocket_local.prepare --confirm
+  & .\.venv\Scripts\python.exe -m pocket_local.prepare --confirm --variant english_18m_2026-10
 }

@@ -497,10 +497,11 @@ class TtsRequest:
     language: str
     voice: str
     speaker: int | None
+    variant: str | None = None
 
 
 def parse_tts_fields(payload: dict) -> TtsRequest:
-    if not isinstance(payload, dict) or "text" not in payload or not set(payload) <= {"text", "language", "voice", "speaker", "engine"}:
+    if not isinstance(payload, dict) or "text" not in payload or not set(payload) <= {"text", "language", "voice", "speaker", "engine", "variant"}:
         raise RequestError(
             '只接受 {"text": "..."}，可选 engine、language、voice、speaker。不能传 gender，也不能指定模型、路径、地址或命令。',
             400,
@@ -520,10 +521,12 @@ def parse_tts_fields(payload: dict) -> TtsRequest:
         from pocket_local.catalog import PocketRequestError, parse_pocket
 
         try:
-            text, language, voice = parse_pocket(payload)
+            text, language, voice, variant = parse_pocket(payload)
         except PocketRequestError as exc:
             raise RequestError(exc.message, exc.status, exc.code) from exc
-        return TtsRequest("pocket", text, language, voice, None)
+        return TtsRequest("pocket", text, language, voice, None, variant)
+    if "variant" in payload:
+        raise RequestError("variant 只用于 Pocket。Piper 请求不要带这个字段。", 400, "bad_request")
     text = payload["text"]
     if not isinstance(text, str) or "\x00" in text:
         raise RequestError("text 必须是不含空字符的字符串。", 400, "bad_request")

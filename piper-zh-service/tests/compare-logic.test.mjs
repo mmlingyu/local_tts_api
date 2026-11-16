@@ -52,6 +52,7 @@ test("old Piper is recognized and is not sent language fields", () => {
     text: "Hello.",
     language: "english",
     voice: "alba",
+    variant: "english_18m_2026-10",
   });
 });
 

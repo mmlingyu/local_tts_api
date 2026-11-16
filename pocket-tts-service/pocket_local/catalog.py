@@ -9,18 +9,24 @@ from __future__ import annotations
 
 MAX_TEXT_CHARS = 500
 
-# Published in pocket_tts/config/english.yaml as mimi.sample_rate.
-# A live model may report the same value; this constant is the config fact.
+# Published in pocket_tts/config/english_18m_2026-10.yaml as mimi.sample_rate.
 PUBLISHED_SAMPLE_RATE = 24000
+
+# Official small-model id. `language="english"` in pocket-tts is the ~100M model.
+DEFAULT_VARIANT = "english_18m_2026-10"
+DEFAULT_PARAMETERS = "18.2M"
+MARKER_VERSION = 2
+
+# Known upstream ids that this service does not load.
+REJECTED_VARIANTS = {
+    "english": "这是上游默认的约 100M 模型，不是本次选择的 18.2M。",
+    "english_7m_2026-10": "6.9M 官方 ID 存在，但本服务没有启用，也没有测过。",
+    "english_2m_2026-10": "1.9M 是实验档，本服务没有启用，也没有测过。",
+    "english_18m_refl_2026-10": "带 reward fine-tuning 的 18.2M 变体没有启用。",
+}
 
 LANGUAGES = {
     "english": {"voice": "alba", "aliases": ("en", "en_us", "en-us")},
-    "french": {"voice": "estelle", "aliases": ("fr", "fr_fr", "fr-fr")},
-    "german": {"voice": "juergen", "aliases": ("de", "de_de", "de-de")},
-    "portuguese": {"voice": "rafael", "aliases": ("pt", "pt_pt", "pt-pt")},
-    "italian": {"voice": "giovanni", "aliases": ("it", "it_it", "it-it")},
-    "spanish": {"voice": "lola", "aliases": ("es", "es_es", "es-es")},
-    "dutch": {"voice": "daan", "aliases": ("nl", "nl_nl", "nl-nl")},
 }
 
 # English names are the README entries marked (en). Other languages only have
@@ -50,13 +56,7 @@ ENGLISH_VOICES = (
 )
 
 VOICES_BY_LANGUAGE = {
-    "english": ENGLISH_VOICES,
-    "french": ("estelle",),
-    "german": ("juergen",),
-    "portuguese": ("rafael",),
-    "italian": ("giovanni",),
-    "spanish": ("lola",),
-    "dutch": ("daan",),
+    "english": ("alba",),
 }
 
 _ALIAS = {}
@@ -91,6 +91,8 @@ def voices() -> list[dict]:
                 {
                     "voice": name,
                     "language": language,
+                    "variant": DEFAULT_VARIANT,
+                    "parameters": DEFAULT_PARAMETERS,
                     "defaultForLanguage": name == LANGUAGES[language]["voice"],
                     "gender": "unknown",
                     "genderSource": "https://github.com/kyutai-labs/pocket-tts/blob/main/README.md",
@@ -107,13 +109,54 @@ def languages() -> list[dict]:
             "language": name,
             "defaultVoice": spec["voice"],
             "voices": list(VOICES_BY_LANGUAGE[name]),
+            "variant": DEFAULT_VARIANT,
+            "parameters": DEFAULT_PARAMETERS,
             "supported": True,
         }
         for name, spec in LANGUAGES.items()
     ]
 
 
-def parse_pocket(payload: dict) -> tuple[str, str, str]:
+def ready_record(sample_rate: int) -> dict:
+    return {
+        "markerVersion": MARKER_VERSION,
+        "variant": DEFAULT_VARIANT,
+        "parameters": DEFAULT_PARAMETERS,
+        "voice": "alba",
+        "sampleRate": sample_rate,
+    }
+
+
+def ready_is_current(data: dict | None) -> bool:
+    if not isinstance(data, dict):
+        return False
+    return (
+        data.get("markerVersion") == MARKER_VERSION
+        and data.get("variant") == DEFAULT_VARIANT
+        and data.get("voice") == "alba"
+    )
+
+
+def parse_variant(raw: object) -> str:
+    if raw is None:
+        return DEFAULT_VARIANT
+    if not isinstance(raw, str):
+        raise PocketRequestError("variant 必须是官方模型 ID。", 400, "bad_variant")
+    variant = raw.strip()
+    if any(mark in variant for mark in ("/", "\\", ":", "?", "#")) or variant.startswith("hf"):
+        raise PocketRequestError("variant 不接受路径、URL 或 hf://。", 400, "bad_variant")
+    if variant == DEFAULT_VARIANT:
+        return variant
+    if variant in REJECTED_VARIANTS:
+        raise PocketRequestError(REJECTED_VARIANTS[variant], 400, "variant_not_enabled")
+    raise PocketRequestError(
+        "variant 只能是 english_18m_2026-10。省略时也是这个 18.2M 模型，不会改用约 100M 的 english。",
+        400,
+        "bad_variant",
+    )
+
+
+def parse_pocket(payload: dict) -> tuple[str, str, str, str]:
     if "speaker" in payload:
         raise PocketRequestError("Pocket 音色没有 Piper 的 speaker 编号。", 400, "speaker_not_allowed")
     text = payload.get("text")
@@ -126,17 +169,22 @@ def parse_pocket(payload: dict) -> tuple[str, str, str]:
         raise PocketRequestError(f"Pocket 文本不能超过 {MAX_TEXT_CHARS} 个字符。", 400, "text_too_long")
     raw_language = payload.get("language", "english")
     if not isinstance(raw_language, str):
-        raise PocketRequestError("language 必须是 Pocket 官方语言名。", 400, "unsupported_language")
+        raise PocketRequestError("language 必须是自然语言代码。模型 ID 请放在 variant。", 400, "unsupported_language")
     key = raw_language.strip().lower().replace("-", "_")
+    variant_keys = {item.replace("-", "_") for item in REJECTED_VARIANTS}
+    variant_keys.add(DEFAULT_VARIANT.replace("-", "_"))
+    if key not in _ALIAS and key in variant_keys:
+        raise PocketRequestError("language 是自然语言。english_18m_2026-10 要放在 variant，不能放在 language。", 400, "unsupported_language")
     if key in UNSUPPORTED:
         raise PocketRequestError(UNSUPPORTED[key], 400, "unsupported_language")
     language = _ALIAS.get(key)
     if language is None:
         raise PocketRequestError(
-            "Pocket 官方语言只有 english、french、german、portuguese、italian、spanish、dutch。没有中文、日语、韩语。",
+            "当前只启用英语小模型。language 用 en 或 english。法语等上游语言没有接到 18.2M 变体上，也不会改用约 100M 模型。",
             400,
             "unsupported_language",
         )
+    variant = parse_variant(payload.get("variant"))
     raw_voice = payload.get("voice", LANGUAGES[language]["voice"])
     if not isinstance(raw_voice, str):
         raise PocketRequestError("voice 必须是内置音色名。", 400, "unknown_voice")
@@ -150,4 +198,4 @@ def parse_pocket(payload: dict) -> tuple[str, str, str]:
             400,
             "unknown_voice",
         )
-    return text, language, voice
+    return text, language, voice, variant

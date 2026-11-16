@@ -7,7 +7,7 @@ import sys
 import wave
 from io import BytesIO
 
-from pocket_local.catalog import parse_pocket
+from pocket_local.catalog import DEFAULT_VARIANT, parse_pocket
 
 
 def _pcm16(audio) -> tuple[bytes, int]:
@@ -43,17 +43,20 @@ def main() -> int:
             continue
         try:
             message = json.loads(raw)
-            text, language, voice = parse_pocket(
+            text, language, voice, variant = parse_pocket(
                 {
                     "text": message.get("text", ""),
                     "language": message.get("language", "english"),
-                    "voice": message.get("voice", ""),
+                    "voice": message.get("voice", "alba"),
+                    "variant": message.get("variant", DEFAULT_VARIANT),
                     "engine": "pocket",
                 }
             )
-            if model is None or loaded != language:
-                model = TTSModel.load_model(language=language)
-                loaded = language
+            if variant != DEFAULT_VARIANT:
+                raise RuntimeError("只加载 english_18m_2026-10。")
+            if model is None or loaded != variant:
+                model = TTSModel.load_model(language=variant)
+                loaded = variant
                 cached_voice = None
                 cached_state = None
             if cached_voice != voice:
@@ -71,6 +74,7 @@ def main() -> int:
                 "frames": frames,
                 "voice": voice,
                 "language": language,
+                "variant": variant,
             }
         except Exception as exc:  # noqa: BLE001
             body = {"ok": False, "error": str(exc)[:500]}

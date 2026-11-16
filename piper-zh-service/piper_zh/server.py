@@ -238,7 +238,7 @@ def make_handler(state: ServiceState) -> type[BaseHTTPRequestHandler]:
                     if request.engine == "pocket":
                         if state.pocket is None:
                             raise RequestError("Pocket 没有接入这个进程。", 503, "pocket_not_ready")
-                        holder["result"] = state.pocket.synthesize(text, language, voice)
+                        holder["result"] = state.pocket.synthesize(text, language, voice, request.variant)
                     else:
                         holder["result"] = state.engine.synthesize(
                             text, language=language, voice=voice, speaker=speaker
@@ -278,7 +278,7 @@ def make_handler(state: ServiceState) -> type[BaseHTTPRequestHandler]:
                 "X-Phoneme-Type": result.phoneme_type,
                 "X-Streaming": "full-wav",
                 "X-Language": getattr(result, "language", language),
-                "X-Voice": getattr(result, "model_id", voice),
+                "X-Voice": getattr(result, "voice_name", None) or result.model_id,
             }
             speaker_header = getattr(result, "speaker_id", speaker)
             if speaker_header is not None:

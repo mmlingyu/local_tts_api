@@ -22,10 +22,10 @@
 同一个 `POST /api/tts` 可以用 `engine` 选择引擎。省略或 `piper` 时仍是现有 Piper。`pocket` 使用同一进程里的 Pocket worker，不另开端口。
 
 ```json
-{"engine":"pocket","text":"Hello.","language":"english","voice":"alba"}
+{"engine":"pocket","text":"Hello.","language":"en","voice":"alba","variant":"english_18m_2026-10"}
 ```
 
-Pocket 官方语言是 english、french、german、portuguese、italian、spanish、dutch。中文、日语、韩语返回 400，不会改用 Piper。`voice` 只能是内置名字。模型 `kyutai/pocket-tts` 需要先在 Hugging Face 接受许可；页面点击不会下载。准备步骤见 `pocket-tts-service/README.zh-CN.md`。
+`language` 是自然语言，当前只接受 `en` 或 `english`。`variant` 是模型 ID。省略 `variant` 时锁定 `english_18m_2026-10`（18.2M，含 decoder）。`english` 是上游约 100M 的默认模型，传它会返回 400，不会静默加载。`english_7m_2026-10`（6.9M）和 `english_2m_2026-10`（1.9M，实验档）官方有这个 ID，但本服务没有启用，也没有测过。`voice` 当前只接受内置名 `alba`。中文、日语、韩语返回 400，不会改用 Piper。模型仍需先在 Hugging Face 接受许可。准备步骤见 `pocket-tts-service/README.zh-CN.md`。
 
 对照页的地址规则：
 

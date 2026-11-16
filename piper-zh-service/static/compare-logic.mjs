@@ -282,9 +282,11 @@ export const POCKET_VOICES = {
   dutch: ["daan"],
 };
 
+export const POCKET_VARIANT = "english_18m_2026-10";
+
 export function pocketRequest(text, language, voice, supportsLanguageFields) {
   if (!supportsLanguageFields) return null;
-  return { engine: "pocket", text, language, voice };
+  return { engine: "pocket", text, language, voice, variant: POCKET_VARIANT };
 }
 
 export function ttsPayload(text, selection, supportsLanguageFields) {

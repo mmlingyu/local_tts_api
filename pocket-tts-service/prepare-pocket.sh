@@ -8,5 +8,5 @@ python3 -m venv .venv
 echo "Pocket venv is ready. The HTTP server is still python -m piper_zh."
 echo "Accept https://huggingface.co/kyutai/pocket-tts before prepare --confirm."
 if [ "${1:-}" = "--confirm" ]; then
-  .venv/bin/python -m pocket_local.prepare --confirm
+  .venv/bin/python -m pocket_local.prepare --confirm --variant english_18m_2026-10
 fi
