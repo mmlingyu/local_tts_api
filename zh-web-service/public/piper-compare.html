@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-store">
+<title>Piper 与 Kokoro 对照测试</title>
+<link rel="stylesheet" href="/piper-compare.css">
+<main>
+  <h1>Piper 与 Kokoro 对照测试</h1>
+  <p class="lede">默认中文合成仍是 8787 上的 Kokoro。这里的 Piper 是可选的本机 Python 服务，不会在点击时下载模型。Phonon 仍只负责英文，不在这页里。</p>
+
+  <section class="license" id="license">
+    <strong>许可与训练链</strong>
+    <p id="license-text">Piper 引擎是 GPL-3.0-or-later。建议的普通话音色 zh_CN-chaowen-medium 录音为 CC0，并从 Hi-Fi TTS reader 92（Cori Samuel，CC BY 4.0）的 en_US-hifi_tts_92-medium 微调。分发时请署名 Hi-Fi TTS。引擎许可证不覆盖音色权重。这不是法律意见。</p>
+  </section>
+
+  <h2>服务状态</h2>
+  <section class="health" id="health" aria-live="polite">
+    <strong class="warn">正在读取 Piper 健康检查…</strong>
+    <span>只报告 127.0.0.1:8791 这个进程是否已加载模型，不探测这台电脑的 GPU 或内存。</span>
+  </section>
+
+  <h2>合成</h2>
+  <div class="row">
+    <label>引擎
+      <select id="engine">
+        <option value="piper" selected>Piper 普通话（本机 Python，chaowen / g2pW）</option>
+        <option value="kokoro">Kokoro（浏览器，沿用现有音色）</option>
+      </select>
+    </label>
+    <label id="kokoro-voice-label">Kokoro 音色
+      <select id="kokoro-voice">
+        <option value="zf_001">zf_001 女声</option>
+        <option value="zf_002">zf_002 女声</option>
+        <option value="zm_009">zm_009 男声</option>
+        <option value="zm_010">zm_010 男声</option>
+      </select>
+    </label>
+  </div>
+  <label class="optin" id="kokoro-optin-label">
+    <input id="kokoro-optin" type="checkbox">
+    我确认现在加载 Kokoro。若浏览器没有缓存，Transformers.js 会访问 Hugging Face 下载 ONNX；这一步不会下载 Piper 模型。未勾选时点击 Kokoro 只会提示，不会发请求。
+  </label>
+  <p class="note" id="kokoro-where">Kokoro 只能在中文页所在的 http://127.0.0.1:8787/piper-compare.html 里跑，因为它依赖那个页面的跨源隔离和本地 ORT。从 8791 打开本页时只能测 Piper。</p>
+
+  <label for="text">文本</label>
+  <textarea id="text">银行行长到了重庆。</textarea>
+  <p>预设会填入文本框，覆盖多音字、数字日期、金额、中英混读、变调轻声、儿化、标点和长文本。可以逐条合成，也可以按当前引擎批量跑完。</p>
+  <div id="presets" class="presets"></div>
+  <div class="row">
+    <button class="primary" id="run-one" type="button">合成当前文本</button>
+    <button id="run-all" type="button">按预设逐条跑当前引擎</button>
+    <button id="stop" type="button" disabled>停止后续条目</button>
+  </div>
+  <p class="note" id="rtf-definition"></p>
+
+  <h2>结果</h2>
+  <p>自动测量和人工音质分开。人工音质只留在这个页面上，不提交，也不改变耗时或 RTF。</p>
+  <div id="results"></div>
+</main>
+<script type="module" src="/piper-compare.js"></script>
+</html>

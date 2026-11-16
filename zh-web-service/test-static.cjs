@@ -1,6 +1,9 @@
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
+const fs = require("node:fs");
 const http = require("node:http");
+const os = require("node:os");
+const path = require("node:path");
 const test = require("node:test");
 
 function listenPort() {
@@ -59,5 +62,37 @@ test("Chinese static server still serves the default page and the Piper compare 
     assert.notEqual(outside.status, 200);
   } finally {
     child.kill("SIGTERM");
+  }
+});
+
+test("compare page is served from public even when piper-zh-service is not a sibling", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "zh-8787-"));
+  fs.mkdirSync(path.join(dir, "public"));
+  fs.copyFileSync(path.join(__dirname, "server.cjs"), path.join(dir, "server.cjs"));
+  fs.copyFileSync(path.join(__dirname, "public", "piper-compare.html"), path.join(dir, "public", "piper-compare.html"));
+  const port = await listenPort();
+  const child = spawn(process.execPath, ["server.cjs"], {
+    cwd: dir,
+    env: { ...process.env, PORT: String(port) },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  try {
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("server did not start")), 5000);
+      child.stdout.on("data", () => {
+        clearTimeout(timer);
+        resolve();
+      });
+      child.on("exit", (code) => reject(new Error("server exited " + code)));
+    });
+    const compare = await get(port, "/piper-compare.html");
+    assert.equal(compare.status, 200);
+    assert.match(compare.body, /Piper 与 Kokoro 对照测试/);
+    assert.match(compare.body, /多音字/);
+    const missing = await get(port, "/piper-compare.html.bak");
+    assert.equal(missing.status, 404);
+  } finally {
+    child.kill("SIGTERM");
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });

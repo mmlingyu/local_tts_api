@@ -71,7 +71,7 @@ $env:PORT = "8787"
 node server.cjs
 ```
 
-浏览器打开 `http://127.0.0.1:8791/piper-compare.html`，或在中文页打开 `http://127.0.0.1:8787/piper-compare.html`。
+浏览器打开 `http://127.0.0.1:8791/piper-compare.html`，或 `http://127.0.0.1:8787/piper-compare.html`。8787 读的是 `zh-web-service\public\piper-compare.html`。若 8787 上仍是旧的 node 进程，它没有这条路由，会返回 `Not found`。先停掉占用 8787 的旧进程，再运行 `start-zh-web.ps1`；脚本会先执行 `node sync-compare.cjs`，并且在 8787 仍被占用时直接退出，不再改到别的端口。
 
 停止 Piper 时，在运行它的窗口按 Ctrl+C。也可以：
 

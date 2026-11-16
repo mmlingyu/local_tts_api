@@ -19,6 +19,8 @@ function findOrtDist() {
   return found;
 }
 
+require('./sync-compare.cjs')();
+
 (async () => {
   await esbuild.build({
     entryPoints: {
