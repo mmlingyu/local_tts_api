@@ -115,7 +115,7 @@ function renderResult(record) {
   const card = document.createElement("article");
   card.className = "result";
   const title = document.createElement("h3");
-  title.textContent = `${record.engineLabel} · ${record.label}`;
+  title.textContent = `${record.engineLabel}${record.engineDetail ? " · " + record.engineDetail : ""} · ${record.label}`;
   const status = document.createElement("p");
   status.className = record.ok ? "ok" : "bad";
   status.textContent = record.ok ? "自动测量：成功" : `自动测量：失败。${record.error || ""}`;

@@ -46,17 +46,38 @@ python3 -m venv .venv
 
 ## Windows
 
-原环境的中文页在 `D:\aispace\zh-web-service`，英文 Phonon 在 `D:\aispace\phonon`。Piper 不要写进那两个目录。把本仓库的 `piper-zh-service` 放在任意本机路径后：
+旧环境的中文页在 `D:\aispace\zh-web-service`，英文 Phonon 在 `D:\aispace\phonon`。下面的命令使用仓库根 `D:\src\local_tts_api`。克隆到其他位置时，只替换这一段路径。不要把 Piper 写进那两个旧目录。
 
 ```powershell
-cd piper-zh-service
-python -m venv .venv
-.\.venv\Scripts\pip install -r requirements.txt -r requirements-dev.txt
-.\.venv\Scripts\python -m piper_zh.download --confirm
-powershell -ExecutionPolicy Bypass -File .\start-piper-zh.ps1
+cd D:\src\local_tts_api\piper-zh-service
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-dev.txt
+.\.venv\Scripts\python.exe -m piper_zh.download --confirm
+$env:HF_HOME = "D:\src\local_tts_api\piper-zh-service\models\hf-home"
+$env:HF_HUB_OFFLINE = "1"
+$env:TRANSFORMERS_OFFLINE = "1"
+$env:HF_HUB_DISABLE_TELEMETRY = "1"
+.\.venv\Scripts\python.exe -m piper_zh --host 127.0.0.1 --port 8791 --device cpu
 ```
 
-停止：`powershell -ExecutionPolicy Bypass -File .\stop-piper-zh.ps1`
+另开一个窗口启动原来的中文页：
+
+```powershell
+cd D:\src\local_tts_api\zh-web-service
+npm install
+node build.cjs
+node download-voices.cjs
+$env:PORT = "8787"
+node server.cjs
+```
+
+浏览器打开 `http://127.0.0.1:8791/piper-compare.html`，或在中文页打开 `http://127.0.0.1:8787/piper-compare.html`。
+
+停止 Piper 时，在运行它的窗口按 Ctrl+C。也可以：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File D:\src\local_tts_api\piper-zh-service\stop-piper-zh.ps1
+```
 
 模型可以不放在默认的 `models\`。用启动参数指定文件，例如：
 
@@ -104,7 +125,9 @@ node --test tests/compare-logic.test.mjs
 .venv/bin/python -m pytest tests/test_real_synthesis.py -q
 ```
 
-这一组会真正调用 chaowen 和 g2pW。没有权重时会跳过，跳过不等于合成成功。分开的「一家银行」和「这位行长」会检查 hang / xing；「银行的行长」在 2026-11-16 的这次 g2pW 上仍把第二个「行」读成 hang，对应测试是预期失败，不能当成听感已经通过。
+这一组会真正调用 chaowen 和 g2pW。没有权重时会跳过，跳过不等于合成成功。多音字按普通话标准读音断言，不把引擎的错误输出改成期望值。
+
+「银行」「行长」的「行」都读 háng（hang2），「长」读 zhǎng。「银行的行长」里两个「行」都应是 hang2。若「这位行长」被读成 xíng，测试失败，并在失败信息里留下实际音素；那是引擎错误，不是预期结果。
 
 中文静态服务另有不依赖浏览器模型的检查：
 

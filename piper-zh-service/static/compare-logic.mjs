@@ -13,6 +13,12 @@ export const PRESETS = [
     text: "银行行长到了重庆。",
   },
   {
+    id: "poly-title",
+    category: "多音字",
+    label: "这位行长（应读 háng）",
+    text: "这位行长来了。",
+  },
+  {
     id: "poly-grow",
     category: "多音字",
     label: "长",
