@@ -1,15 +1,24 @@
 import {
   FIRST_AUDIO_NOTE,
-  PRESETS,
   RTF_DEFINITION,
-  categories,
   formatSeconds,
   isLoopbackHttp,
+  kokoroAllowedFor,
   kokoroAvailableHere,
   parseWavPcm16,
   piperApiBase,
+  presetsFor,
   rtf,
 } from "./piper-compare-logic.mjs";
+
+const FALLBACK_VOICES = [
+  { voice: "zh_CN-chaowen-medium", language: "zh", numSpeakers: 1, speakers: {}, defaultForLanguage: true, datasetLicense: "CC0", downloaded: false, loaded: false, frontendReady: false, pronunciationReviewed: false },
+  { voice: "en_US-joe-medium", language: "en", numSpeakers: 1, speakers: {}, defaultForLanguage: true, datasetLicense: "CC0", downloaded: false, loaded: false, frontendReady: false, pronunciationReviewed: false },
+  { voice: "ja_JP-hi_fi_captain-medium", language: "ja", numSpeakers: 2, speakers: { female: 0, male: 1 }, defaultForLanguage: true, datasetLicense: "CC BY-NC-SA 4.0", downloaded: false, loaded: false, frontendReady: false, pronunciationReviewed: false },
+  { voice: "ko_KR-kss-medium", language: "ko", numSpeakers: 1, speakers: {}, defaultForLanguage: true, datasetLicense: "CC BY-NC-SA 4.0", downloaded: false, loaded: false, frontendReady: false, pronunciationReviewed: false },
+  { voice: "fr_FR-siwis-medium", language: "fr", numSpeakers: 1, speakers: {}, defaultForLanguage: true, datasetLicense: "CC BY 4.0", downloaded: false, loaded: false, frontendReady: false, pronunciationReviewed: false },
+];
+let voiceCatalog = FALLBACK_VOICES;
 
 const $ = (id) => document.getElementById(id);
 let piperApi = piperApiBase(location, window.localStorage.getItem("piperApiBase"));
@@ -34,18 +43,76 @@ if (!kokoroAvailableHere(location)) {
     "当前不是 8787 上的中文服务页面，Kokoro 选项会直接说明原因，不会去加载模型。Piper 仍可在本页测试。对照页地址：http://127.0.0.1:8787/piper-compare.html";
 }
 
+function currentLanguage() {
+  return $("piper-language").value;
+}
+
+function voicesForLanguage(language) {
+  return voiceCatalog.filter((item) => item.language === language);
+}
+
+let renderingVoices = false;
+
+function renderVoiceChoices() {
+  if (renderingVoices) return;
+  renderingVoices = true;
+  const language = currentLanguage();
+  const voices = voicesForLanguage(language);
+  const select = $("piper-voice");
+  const previous = select.value;
+  select.replaceChildren();
+  for (const voice of voices) {
+    const option = document.createElement("option");
+    option.value = voice.voice;
+    const flags = [
+      voice.downloaded ? "已下载" : "未下载",
+      voice.loaded ? "已加载" : "未加载",
+      voice.frontendReady ? "前端就绪" : "前端未就绪",
+      voice.pronunciationReviewed ? "已听审" : "未做人工听审",
+    ];
+    option.textContent = `${voice.voice} · ${voice.datasetLicense || ""} · ${flags.join(" / ")}`;
+    select.append(option);
+  }
+  if (voices.some((item) => item.voice === previous)) select.value = previous;
+  const chosen = voices.find((item) => item.voice === select.value) || voices[0];
+  const speakerLabel = $("piper-speaker-label");
+  const speaker = $("piper-speaker");
+  speaker.replaceChildren();
+  if (chosen && chosen.numSpeakers > 1) {
+    speakerLabel.hidden = false;
+    const entries = Object.keys(chosen.speakers || {}).length
+      ? Object.entries(chosen.speakers)
+      : [["0", 0]];
+    for (const [name, id] of entries) {
+      const option = document.createElement("option");
+      option.value = String(id);
+      option.textContent = `${name} (${id})`;
+      speaker.append(option);
+    }
+  } else {
+    speakerLabel.hidden = true;
+  }
+  const kokoro = $("engine").querySelector('option[value="kokoro"]');
+  const allowed = kokoroAllowedFor(language);
+  kokoro.disabled = !allowed;
+  if (!allowed && $("engine").value === "kokoro") $("engine").value = "piper";
+  $("preset-note").textContent = allowed
+    ? "中文可以对照 Kokoro。其他语言只走 Piper 白名单，不会用中文 Kokoro 音色冒充日语、韩语、法语或英语。"
+    : "当前语言不使用 Kokoro。中文 Kokoro 音色不能用来冒充这个语言。";
+  renderingVoices = false;
+}
+
 function renderPresets() {
   const root = $("presets");
-  for (const category of categories()) {
-    for (const preset of PRESETS.filter((item) => item.category === category)) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.textContent = `${preset.category} · ${preset.label}`;
-      button.addEventListener("click", () => {
-        $("text").value = preset.text;
-      });
-      root.append(button);
-    }
+  root.replaceChildren();
+  for (const preset of presetsFor(currentLanguage())) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = `${preset.category} · ${preset.label}`;
+    button.addEventListener("click", () => {
+      $("text").value = preset.text;
+    });
+    root.append(button);
   }
 }
 
@@ -58,6 +125,7 @@ function setBusy(value) {
 }
 
 async function refreshHealth() {
+  await refreshVoices();
   const box = $("health");
   try {
     const response = await fetch(`${piperApi}/api/health`, { cache: "no-store" });
@@ -65,9 +133,10 @@ async function refreshHealth() {
     const ready = data.modelReady === true;
     const title = document.createElement("strong");
     title.className = ready ? "ok" : "warn";
+    const loaded = Array.isArray(data.loadedVoiceIds) ? data.loadedVoiceIds.join(", ") : "";
     title.textContent = ready
-      ? `Piper 已加载 ${data.modelId || "模型"}（${data.configuredDevice || "cpu"}）`
-      : "Piper 进程可访问，但模型还没准备好";
+      ? `默认中文音色文件已在本机（${data.configuredDevice || "cpu"}）${loaded ? "；内存中：" + loaded : "；尚未全部常驻内存"}`
+      : "Piper 进程可访问，但默认中文音色还没准备好";
     const detail = document.createElement("span");
     const parts = [
       data.piperVersion ? `piper-tts ${data.piperVersion}` : "还没读到 piper-tts 版本",
@@ -179,10 +248,14 @@ function renderResult(record) {
 
 async function runPiper(text) {
   const started = performance.now();
+  const body = { text, language: currentLanguage(), voice: $("piper-voice").value };
+  if (!$("piper-speaker-label").hidden && $("piper-speaker").value !== "") {
+    body.speaker = Number($("piper-speaker").value);
+  }
   const response = await fetch(`${piperApi}/api/tts`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify(body),
   });
   const roundTripSeconds = (performance.now() - started) / 1000;
   if (!response.ok) {
@@ -216,6 +289,9 @@ async function runPiper(text) {
 }
 
 async function runKokoro(text) {
+  if (!kokoroAllowedFor(currentLanguage())) {
+    throw new Error("Kokoro 只保留给中文对照。不会用中文音色合成当前语言。");
+  }
   if (!kokoroAvailableHere(location)) {
     throw new Error("这个页面不在 8787 上，没有加载 Kokoro。请打开 http://127.0.0.1:8787/piper-compare.html。");
   }
@@ -279,12 +355,24 @@ async function runOne() {
   }
 }
 
+async function refreshVoices() {
+  try {
+    const response = await fetch(`${piperApi}/api/voices`, { cache: "no-store" });
+    const data = await response.json();
+    if (Array.isArray(data.voices) && data.voices.length) voiceCatalog = data.voices;
+  } catch {
+    voiceCatalog = FALLBACK_VOICES;
+  }
+  renderVoiceChoices();
+  renderPresets();
+}
+
 async function runAll() {
   if (running) return;
   setBusy(true);
   stopRequested = false;
   try {
-    for (const preset of PRESETS) {
+    for (const preset of presetsFor(currentLanguage())) {
       if (stopRequested) break;
       $("text").value = preset.text;
       await runItem(preset);
@@ -300,5 +388,14 @@ $("run-all").addEventListener("click", () => runAll());
 $("stop").addEventListener("click", () => {
   stopRequested = true;
 });
+$("piper-language").addEventListener("change", () => {
+  renderVoiceChoices();
+  renderPresets();
+  const first = presetsFor(currentLanguage())[0];
+  if (first) $("text").value = first.text;
+});
+$("piper-voice").addEventListener("change", renderVoiceChoices);
+renderVoiceChoices();
 renderPresets();
+refreshVoices();
 refreshHealth();

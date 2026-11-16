@@ -134,6 +134,32 @@ export const PRESETS = [
   },
 ];
 
+export const LANGUAGE_PRESETS = {
+  zh: PRESETS,
+  en: [
+    { id: "en-hello", category: "英语", label: "短句", text: "Hello. This is the local Piper English voice." },
+    { id: "en-date", category: "英语", label: "日期", text: "The meeting is on November 16, 2026, at 12:30." },
+  ],
+  fr: [
+    { id: "fr-hello", category: "法语", label: "短句", text: "Bonjour. Ceci est la voix française locale." },
+    { id: "fr-date", category: "法语", label: "日期", text: "La réunion est le 16 novembre 2026." },
+  ],
+  ja: [
+    { id: "ja-hello", category: "日语", label: "短句", text: "こんにちは。これは日本語の試験です。" },
+  ],
+  ko: [
+    { id: "ko-hello", category: "韩语", label: "短句", text: "안녕하세요. 이것은 한국어 시험입니다." },
+  ],
+};
+
+export function presetsFor(language) {
+  return LANGUAGE_PRESETS[language] || PRESETS;
+}
+
+export function kokoroAllowedFor(language) {
+  return language === "zh";
+}
+
 export function categories() {
   const seen = [];
   for (const preset of PRESETS) {

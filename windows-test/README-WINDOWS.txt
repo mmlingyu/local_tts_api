@@ -6,11 +6,13 @@ The first run needs network access for npm, pip, and the model download.
 It does not contain node_modules, a Python virtualenv, browser profiles,
 credentials, logs, ONNX weights, or the Phonon executable.
 
-English speech still uses the Phonon files already on your machine. Those files
-are not in this zip. The two engines this package can start are:
+The Phonon English page is unchanged and still uses the Phonon files already
+on your machine. Those files are not in this zip. This package can also start:
 
 - Chinese Kokoro, in the browser, after npm ci and node build.cjs
-- Optional local Piper Mandarin, after the Python install below
+- Optional local Piper. The default request is still Mandarin. English, French,
+  Japanese, and Korean are separate whitelist voices and are not downloaded
+  unless you name them. See docs\API.zh-CN.md.
 
 Do not stop whatever is already listening on port 8791. On this project that
 port may be Cursor. Choose another free port for Piper, for example 8800.
@@ -70,6 +72,15 @@ Or, after the virtualenv exists:
 
     powershell -ExecutionPolicy Bypass -File .\start-piper-zh.ps1 -Port 8800
 
+The command above downloads only the Chinese voice. Other languages are
+optional and each command fetches one voice:
+
+    .\.venv\Scripts\python.exe -m piper_zh.download --confirm --language en
+    .\.venv\Scripts\python.exe -m pip install -r requirements-ja.txt
+    .\.venv\Scripts\python.exe -m piper_zh.download --confirm --language ja
+    .\.venv\Scripts\python.exe -m piper_zh.download --confirm --language ko
+    .\.venv\Scripts\python.exe -m piper_zh.download --confirm --language fr
+
 Without the downloaded model, Piper still starts and /api/health says the model
 is not ready. It does not download weights during a page click.
 
@@ -93,6 +104,11 @@ Kokoro-82M-v1.1-zh and @uzen/kokoro-js: Apache-2.0.
 
 The engine license does not replace the voice license. This note is not legal
 advice.
+
+en_US-joe-medium is CC0 and is fine-tuned from nl_BE-rdh-medium, also CC0.
+fr_FR-siwis-medium is CC BY 4.0 and is fine-tuned from Hi-Fi TTS.
+ja_JP-hi_fi_captain-medium and ko_KR-kss-medium are CC BY-NC-SA 4.0.
+Read each MODEL_CARD. None of this is a legal opinion.
 
 4. Timing
 ---------

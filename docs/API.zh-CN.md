@@ -7,32 +7,33 @@
 - `zh-web-service/server.cjs`、`zh-web-service/app.js`、`zh-web-service/kokoro-client.js`
 - `piper-zh-service/static/compare.js`
 
-没有一个 HTTP 接口同时负责中文和英文。调用方如果要「一句话里中英分开读」，必须自己把文本拆开，再分别调用下面的引擎。仓库没有这种内置路由。
+没有一个接口会自动拆开中英混合文本。Piper 的一次请求只使用白名单里的一个音色。Phonon 仍是另一条英文 HTTP。Kokoro 仍在浏览器里。调用方如果要一句里换引擎，必须自己拆句。
 
 ## 端口：源码默认和本机现状分开
 
 | 引擎 | 源码默认 | 绑定地址 | 本机现状 |
 | --- | --- | --- | --- |
 | 中文静态页，含对照页 | `8787` | `127.0.0.1` | 用户电脑上的测试页使用 `127.0.0.1:8787` |
-| Piper 普通话 | `--port` 默认 `8791` | `127.0.0.1` | 用户电脑上 `8791` 被 Cursor 占用，Piper 实际启动在 `127.0.0.1:8800`，设备参数为 CPU。本文不改这个进程 |
+| Piper 白名单（中、英、日、韩、法） | `--port` 默认 `8791` | `127.0.0.1` | 用户电脑上 `8791` 被 Cursor 占用，已有 Piper 进程在 `127.0.0.1:8800`。本文不改那个进程。新代码仍用 `--port`，默认 8791 |
 | Phonon 英文 | `server.cjs` 里写死 `8790` | `127.0.0.1` | 本机是否正在监听没有在这次文档工作中确认 |
 
 下文示例里的 `PIPER` 用 `http://127.0.0.1:8800` 表示用户电脑上的当前 Piper。源码默认仍是 `8791`。把示例换到默认端口时，只改这一个地址。Phonon 示例用源码默认 `8790`，不表示已经确认它正在运行。
 
 ## 服务矩阵
 
-| 能力 | 入口 | 中文 | 英文 | 是否 HTTP 合成 |
-| --- | --- | --- | --- | --- |
-| Piper | `POST /api/tts` | 是，拼音音素 + g2pW | 没有英文音色，也不要把它当英文引擎 | 是 |
-| Phonon | `POST /api/tts` | 文本里只要有汉字就整段拒绝 | 是 | 是 |
-| Kokoro | 浏览器里的 `window.zhTts` 或 `kokoro-client.js` | 是 | 主页面另有 `af_maple`；`kokoro-client.js` 不接受这个英文音色 | 否。8787 只提供静态文件 |
-| 8787 静态服务 | `GET /`、`GET /piper-compare.html` | 页面 | 页面可以再去调 Phonon 或 Piper | 本身不合成 |
+| 能力 | 入口 | 中文 | 英文 | 日语 / 韩语 / 法语 | 是否 HTTP 合成 |
+| --- | --- | --- | --- | --- | --- |
+| Piper | `POST /api/tts` | `zh_CN-chaowen-medium`，g2pW 拼音 | `en_US-joe-medium`，espeak `en-us`。不是 lessac，也不替换 Phonon | 各有一条官方白名单音色，见下表 | 是 |
+| Phonon | `POST /api/tts` | 含汉字则整段拒绝 | 是。旧英文页默认仍是它 | 不支持 | 是 |
+| Kokoro | `window.zhTts` 或 `kokoro-client.js` | 是 | 主页面另有 `af_maple`；对照页不拿中文音色去读其他语言 | 不支持 | 否 |
+| 8787 静态服务 | `GET /`、`GET /piper-compare.html` | 页面 | 页面可选 Piper 或 Phonon | 对照页可选 Piper 白名单 | 本身不合成 |
 
 推荐调用：
 
-- 普通话：Piper，`http://127.0.0.1:8800/api/tts`。对照页上把 Piper 地址设成同一个 URL。
-- 英文：Phonon，`http://127.0.0.1:8790/api/tts`。前提是本机已经有 `ptts.exe`、英文模型和音色文件。本包不附带这些文件。
-- 需要浏览器里直接合成中文，或使用 `af_maple`：打开 `http://127.0.0.1:8787/`，调用页面加载后的 `window.zhTts`。这不是 HTTP。
+- 旧客户端只发 `{"text":"..."}`：仍是 Piper 中文 chaowen。
+- 要指定语言：同一 Piper 地址，加上 `language` 或 `voice`。用户电脑上的地址是 `http://127.0.0.1:8800`，但那个进程要换成这份新代码后才会认识新字段。
+- 继续用原来的 Phonon 英文页：`http://127.0.0.1:8790/api/tts`。它没有被改成 Piper。
+- 浏览器中文或 `af_maple`：`http://127.0.0.1:8787/` 的 `window.zhTts`。这不是 HTTP。
 
 对照页 `http://127.0.0.1:8787/piper-compare.html` 也不是统一 API。它在浏览器里分别请求 Piper 和 Kokoro。
 
@@ -50,9 +51,13 @@
 - `engine`：`piper-zh`
 - `piperPackage`：`piper-tts[zh]==1.8.0`
 - `piperVersion`：已安装的包版本；没装到时为 `null`
-- `modelId`、`modelPath`
-- `phonemeType`：准备好之后应为 `pinyin`
-- `g2p`：`python-g2pW`
+- `modelId`：默认中文音色是否已在磁盘上。`modelReady: true` 只表示 chaowen 文件和 g2pW 都在，不表示五种语言都已加载进内存
+- `loadedVoiceIds`、`cacheLimit`：内存里最多保留有限个音色，默认 2。不会把五种模型一直放着
+- `languages`、`voices`：每种语言的官方条目、是否已下载、是否已加载、前端是否就绪、`pronunciationReviewed`。最后一项恒为 false，自动 WAV 不是人工听审
+- `phonemeType`：默认中文就绪时为 `pinyin`
+- `g2p`：默认中文就绪时为 `python-g2pW`。英语、法语、韩语走 espeak，日语走 OpenJTalk，不会调用 g2pW
+
+`GET /api/voices` 返回同一份白名单。响应里没有可填写的模型 URL。页面不能提交远程下载地址。
 - `sampleRate`：chaowen 为 `22050`，单位 Hz
 - `configuredDevice`：启动参数 `cpu` 或 `cuda`
 - `hardwareProbe`：`false`。这个接口不探测 GPU
@@ -82,11 +87,16 @@
 `POST /api/tts`
 
 - `Content-Type` 必须以 `application/json` 开头。
-- 请求体是 JSON 对象，并且**只能有** `text` 这一个字段。多一个字段，包括 `voice`、`speed`、`model`，都是 HTTP 400。
+- 请求体只能包含 `text`，以及可选的 `language`、`voice`、`speaker`。`model`、`path`、`url`、`command`、`speed` 都会 400。
+- 只有 `{"text":"..."}` 时，语言是 `zh`，音色是 `zh_CN-chaowen-medium`。
+- `language` 接受 `zh`、`en`、`ja`、`ko`、`fr`，或 `zh_CN`、`en_US`、`ja_JP`、`ko_KR`、`fr_FR`。`en_GB` 不在白名单里。
+- `voice` 必须是下表里的 id。`en_US-lessac-medium` 会被拒绝。
+- `language` 和 `voice` 同时出现时必须属于同一种语言，否则 `language_voice_mismatch`。
 - `text`：字符串，必填。去掉首尾空白后长度 1 到 2000。不能含有 U+0000。
 - 整个请求体的 `Content-Length` 必须在 1 到 65536 字节之间。
-- 没有语速、说话人、种子或模型路径参数。语速用的是模型配置里的 `length_scale`，请求改不了。
-- 不检查汉字。中英混合不会被自动拆给 Phonon。g2pW 主要处理中文，不要把英文片段当成已支持的英文朗读。
+- 没有语速参数。语速仍是模型配置里的 `length_scale`。
+- 单说话人音色如果带了 `speaker`，返回 `speaker_not_allowed`。日语 `ja_JP-hi_fi_captain-medium` 有 `female`（0）和 `male`（1）。省略时用 0。
+- 英语和法语文本里如果有汉字、假名或韩文，返回 `mixed_script`。日语文本里的韩文、韩语文本里的假名同样拒绝。服务不会把这些片段改派给另一个音色。中文请求仍接受夹杂的拉丁字母，但 g2pW 不会把英文分给 Joe。
 
 成功时：
 
@@ -99,8 +109,11 @@
 - `X-RTF`：`X-Synth-Seconds / X-Audio-Duration`，无单位，6 位小数。小于 1 表示整段合成比这段音频的播放时长短。
 - `X-Sample-Rate`：整数 Hz 的十进制字符串。
 - `X-Engine: Piper-zh`
-- `X-Model`：例如 `zh_CN-chaowen-medium`
-- `X-Phoneme-Type: pinyin`
+- `X-Model`：实际音色 id
+- `X-Language`：`zh`、`en`、`ja`、`ko` 或 `fr`
+- `X-Voice`：与 `X-Model` 相同的音色 id
+- `X-Speaker-Id`：只有多说话人音色才有
+- `X-Phoneme-Type`：`pinyin`、`espeak` 或 `japanese`
 
 这些头在开发虚拟机的一次 `{"text":"你好。"}` 烟测里都出现了，WAV 头为单声道、16-bit、22050 Hz。那次的具体秒数不是性能报告，这里不记录。
 
@@ -108,14 +121,14 @@
 
 | HTTP | 何时 |
 | --- | --- |
-| 400 | JSON 无效、字段不是恰好 `{text}`、`text` 类型不对、含空字符、空白文本、超过 2000 字、`Content-Length` 不是整数 |
+| 400 | JSON 无效、出现路径或命令字段、`text` 不合法、超过 2000 字、`unsupported_language`、`unknown_voice`、`language_voice_mismatch`、`speaker_not_allowed`、`speaker_out_of_range`、`mixed_script` |
 | 403 | `Host` 不是 `127.0.0.1:实际端口` 或 `localhost:实际端口`；或者带了 `Origin` 且不在允许列表 |
 | 404 | POST 路径不是 `/api/tts` |
 | 413 | 请求体为空或大于 65536 字节 |
 | 415 | `Content-Type` 不是 `application/json` 开头 |
 | 429 | 已有一段正在合成。响应带 `Retry-After: 2`。等当前段结束后再发，不要并行打同一进程 |
 | 500 | 合成失败或结果无声。`error` 最长 500 字符 |
-| 503 | 模型或 g2pW 未就绪 |
+| 503 | 该音色文件还没下载，或它的前端没装好。`code` 为 `model_missing` 或 `frontend_missing`。中文缺 g2pW、日语缺 pyopenjtalk-plus 都属于这一类 |
 | 504 | 等待整段合成超过 180 秒。后台可能还在算，随后的请求会先看到 429 |
 
 允许的浏览器来源只有：
@@ -127,9 +140,32 @@
 
 没有 `Origin` 的本机程序（curl、Python）可以调用。服务只监听 `127.0.0.1`。
 
-`OPTIONS /api/tts` 和 `OPTIONS /api/health` 在来源合法时返回 204。`Access-Control-Max-Age` 为 600 秒。
+`OPTIONS /api/tts`、`OPTIONS /api/health` 和 `OPTIONS /api/voices` 在来源合法时返回 204。`Access-Control-Max-Age` 为 600 秒。
 
-离线：先运行 `python -m piper_zh.download --confirm`，再带 `HF_HUB_OFFLINE=1` 启动。页面点击不会下载模型。
+离线准备一次只下载一个音色。不带 `--voice` 或 `--language` 时仍只准备中文 chaowen 和 g2pW：
+
+```bash
+python -m piper_zh.download --confirm
+python -m piper_zh.download --confirm --language en
+python -m piper_zh.download --confirm --voice fr_FR-siwis-medium
+python -m piper_zh.download --list
+```
+
+日语还要另装 `pyopenjtalk-plus`（`requirements-ja.txt`）。这条依赖不会在下载英语时安装。页面点击不会下载模型。
+
+### 白名单
+
+索引核对日期是 2026-11-16 的 `voices.json`。采样率都是 22050 Hz。ONNX 大小是索引里的字节数。许可描述来自模型卡和 Piper 的商用说明，不是法律意见。
+
+| 语言 | 默认音色 | 前端 | ONNX 字节 | 许可与训练链 | VOICES.md 语言列表 |
+| --- | --- | --- | --- | --- | --- |
+| zh | `zh_CN-chaowen-medium` | pinyin，g2pW | 63221984 | 录音 CC0；底模 Hi-Fi TTS reader 92，CC BY 4.0，分发要署名 | 有 |
+| en | `en_US-joe-medium` | espeak `en-us` | 63221984 | 录音 CC0；底模 `nl_BE-rdh-medium`，CC0。不是 lessac | 有 |
+| fr | `fr_FR-siwis-medium` | espeak `fr` | 63221984 | SIWIS 为 CC BY 4.0；底模同样是 Hi-Fi TTS，CC BY 4.0。不是无义务许可 | 有 |
+| ja | `ja_JP-hi_fi_captain-medium` | japanese，OpenJTalk。两个说话人 | 76753841 | 数据集 CC BY-NC-SA 4.0，非商用；模型卡写明从 LibriTTS-R 微调 | 列表里没有日语，索引里有这一条 |
+| ko | `ko_KR-kss-medium` | espeak `ko` | 63221984 | 数据集 CC BY-NC-SA 4.0，非商用；模型卡写明从 LibriTTS-R 微调 | 列表里没有韩语，索引里有这一条 |
+
+没有把 lessac、huayan、xiao_ya 放进白名单。官方索引里还有很多英语和法语音色，本服务不接受它们的 id。
 
 ## Phonon 合成
 
@@ -235,6 +271,18 @@ $utf8 = New-Object System.Text.UTF8Encoding $false
 curl.exe -sS -D piper-headers.txt -o piper.wav -H "Content-Type: application/json" --data-binary "@piper-body.json" http://127.0.0.1:8800/api/tts
 ```
 
+英语、日语各自再写一个 UTF-8 文件。端口仍要是已经换成新代码的 Piper：
+
+```powershell
+$json = '{"text":"Hello.","language":"en"}'
+$utf8 = New-Object System.Text.UTF8Encoding $false
+[System.IO.File]::WriteAllText("$pwd\piper-en.json", $json, $utf8)
+curl.exe -sS -D piper-en-headers.txt -o piper-en.wav -H "Content-Type: application/json" --data-binary "@piper-en.json" http://127.0.0.1:8800/api/tts
+$json = '{"text":"こんにちは。","language":"ja","speaker":"female"}'
+[System.IO.File]::WriteAllText("$pwd\piper-ja.json", $json, $utf8)
+curl.exe -sS -o piper-ja.wav -H "Content-Type: application/json" --data-binary "@piper-ja.json" http://127.0.0.1:8800/api/tts
+```
+
 Phonon 同样先写文件。这条假定源码默认端口，本机是否在听未确认：
 
 ```powershell
@@ -248,11 +296,12 @@ curl.exe -sS -D phonon-headers.txt -o phonon.wav -H "Content-Type: application/j
 
 ```powershell
 curl.exe -sS http://127.0.0.1:8800/api/health
+curl.exe -sS http://127.0.0.1:8800/api/voices
 curl.exe -sS http://127.0.0.1:8790/api/health
 curl.exe -sS http://127.0.0.1:8790/api/voices
 ```
 
-开发虚拟机上对 Piper 的等价烟测是：健康检查返回 `modelReady: true`，`POST /api/tts` 返回 200 和 `audio/wav`，多一个 `voice` 字段返回 400 和 `{"error":"只接受 {\"text\": \"...\"}。不能通过请求指定模型、路径或命令。"}`。Phonon 的 curl **未验证**。
+上面两条 8800 是 Piper。两条 8790 是 Phonon。开发虚拟机对 Piper 白名单做了结构烟测：五种默认音色各返回一条非静音的 16-bit 单声道 WAV，采样率 22050。没有记录耗时，也不表示听感已经验收。`en_US-lessac-medium`、语言和音色冲突、英语文本里的汉字都会 400。Phonon 的 curl **未验证**。
 
 ## Python
 
@@ -262,7 +311,7 @@ from pathlib import Path
 
 import requests
 
-body = {"text": "你好。"}
+body = {"text": "Bonjour.", "language": "fr", "voice": "fr_FR-siwis-medium"}
 response = requests.post(
     "http://127.0.0.1:8800/api/tts",
     data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
@@ -284,7 +333,7 @@ Phonon 把 URL 换成 `http://127.0.0.1:8790/api/tts`，正文可以带 `voice`�
 const response = await fetch("http://127.0.0.1:8800/api/tts", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ text: "你好。" }),
+  body: JSON.stringify({ text: "안녕하세요.", language: "ko" }),
 });
 if (!response.ok) {
   const data = await response.json();
@@ -316,7 +365,9 @@ const { samples, sampleRate, synthMs, device } = await synthesizeKokoro("你好�
 
 | 项 | 结果 |
 | --- | --- |
-| Piper `GET /api/health`、成功 WAV 头、多余字段 400 | 开发虚拟机烟测通过。端口是临时的 `18792`，不是用户的 `8800` |
+| Piper 旧的 `{text}` 中文请求、白名单校验、缓存淘汰 | 单元测试通过 |
+| Piper 五种默认音色各一条 WAV | 开发虚拟机烟测通过。只检查 WAV 结构、采样率和非静音。没有新的耗时数字，也没有人工听审 |
+| 用户电脑上的 8800 进程 | 未替换，未在那台机器上下载新语言 |
 | Phonon 全部 HTTP | 未验证。环境里没有 `ptts.exe` |
 | Kokoro 浏览器函数 | 这次未重跑。协议以 `app.js` 和 `kokoro-client.js` 为准 |
 | 8787 是否正在用户电脑上返回对照页 | 未在用户电脑上检查 |

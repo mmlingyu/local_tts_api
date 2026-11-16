@@ -1,6 +1,16 @@
-# 可选的本机 Piper 普通话服务
+# 可选的本机 Piper 服务
 
-这是独立进程，不替换 8787 的 Kokoro，也不替换 8790 的英文 Phonon。默认打开 `http://127.0.0.1:8787/` 时，中文仍然走 Kokoro。
+这是独立进程，不替换 8787 的 Kokoro，也不替换 8790 的英文 Phonon。默认打开 `http://127.0.0.1:8787/` 时，中文仍然走 Kokoro。Phonon 英文页保持原样。
+
+Piper 白名单目前有五种官方音色，一次请求只用其中一个：
+
+- `zh_CN-chaowen-medium`：拼音，g2pW。只发 `{"text":"..."}` 时仍是它。
+- `en_US-joe-medium`：espeak。训练链是 CC0 的 rdh，不是 lessac。
+- `fr_FR-siwis-medium`：espeak。CC BY 4.0，并带 Hi-Fi TTS 署名要求。
+- `ja_JP-hi_fi_captain-medium`：OpenJTalk。CC BY-NC-SA 4.0。`VOICES.md` 的语言列表没写日语，`voices.json` 有这一条。
+- `ko_KR-kss-medium`：espeak `ko`。CC BY-NC-SA 4.0。同样不在 `VOICES.md` 的语言列表里，但在索引里。
+
+调用说明见 [`docs/API.zh-CN.md`](../docs/API.zh-CN.md)。这不是法律意见。
 
 对照页：
 

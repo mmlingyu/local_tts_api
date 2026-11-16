@@ -44,13 +44,15 @@ class FakeEngine:
         self.ready = True
         self.error = None
         self.calls: list[str] = []
+        self.requests: list[tuple] = []
         self.entered = threading.Event()
         self.release = threading.Event()
 
-    def synthesize(self, text: str):
+    def synthesize(self, text: str, language: str | None = None, voice: str | None = None, speaker: int | None = None):
         from piper_zh.engine import Synthesis
 
         self.calls.append(text)
+        self.requests.append((language, voice, speaker))
         if text == "HOLD":
             self.entered.set()
             assert self.release.wait(5)
@@ -61,7 +63,9 @@ class FakeEngine:
             duration_seconds=0.4,
             synth_seconds=0.05,
             phoneme_type="pinyin",
-            model_id="zh_CN-chaowen-medium",
+            model_id=voice or "zh_CN-chaowen-medium",
+            language=language or "zh",
+            speaker_id=speaker,
         )
 
     def status(self) -> dict:
@@ -209,3 +213,89 @@ def test_not_ready_is_a_readable_503(server):
 
 def test_download_command_does_not_fetch_without_confirm():
     assert download_run([]) == 2
+    assert download_run(["--language", "en"]) == 2
+    assert download_run(["--voice", "en_US-lessac-medium"]) == 2
+    assert download_run(["--list"]) == 0
+
+
+def test_old_text_body_stays_chinese(server):
+    _httpd, engine, base = server
+    status, headers, _body = request(base, "/api/tts", {"text": "你好。"})
+    assert status == 200
+    assert engine.requests == [("zh", "zh_CN-chaowen-medium", None)]
+    assert headers["X-Language"] == "zh"
+    assert headers["X-Voice"] == "zh_CN-chaowen-medium"
+
+
+def test_whitelist_rejects_unknown_voice_mismatch_and_paths(server):
+    _httpd, engine, base = server
+    status, _headers, body = request(base, "/api/tts", {"text": "Hello.", "voice": "en_US-lessac-medium"})
+    assert status == 400
+    assert json.loads(body)["code"] == "unknown_voice"
+    status, _headers, body = request(base, "/api/tts", {"text": "Hello.", "language": "de"})
+    assert status == 400
+    assert json.loads(body)["code"] == "unsupported_language"
+    status, _headers, body = request(
+        base, "/api/tts", {"text": "Hello.", "language": "zh", "voice": "en_US-joe-medium"}
+    )
+    assert status == 400
+    assert json.loads(body)["code"] == "language_voice_mismatch"
+    status, _headers, body = request(base, "/api/tts", {"text": "Hello.", "voice": "en_US-joe-medium", "url": "http://example.com/a.onnx"})
+    assert status == 400
+    status, _headers, body = request(base, "/api/tts", {"text": "你好。", "voice": "en_US-joe-medium"})
+    assert status == 400
+    assert json.loads(body)["code"] == "mixed_script"
+    status, _headers, body = request(base, "/api/tts", {"text": "Hello.", "voice": "en_US-joe-medium", "speaker": 0})
+    assert status == 400
+    assert json.loads(body)["code"] == "speaker_not_allowed"
+    status, _headers, body = request(
+        base, "/api/tts", {"text": "こんにちは。", "language": "ja", "speaker": "female"}
+    )
+    assert status == 200
+    assert engine.requests[-1] == ("ja", "ja_JP-hi_fi_captain-medium", 0)
+    assert engine.calls[0] != "Hello."
+    status, _headers, body = request(base, "/api/voices")
+    payload = json.loads(body)
+    ids = {item["voice"] for item in payload["voices"]}
+    assert "en_US-lessac-medium" not in ids
+    assert {"zh_CN-chaowen-medium", "en_US-joe-medium", "fr_FR-siwis-medium", "ja_JP-hi_fi_captain-medium", "ko_KR-kss-medium"} <= ids
+    assert all("url" not in item for item in payload["voices"])
+    assert engine.calls.count("こんにちは。") == 1
+
+
+def test_voice_cache_drops_the_oldest_and_stays_serial():
+    from piper_zh.catalog import BY_ID
+    from piper_zh.engine import Synthesis, VoicePool
+
+    created: list[str] = []
+
+    class Stub:
+        def __init__(self, voice_id: str) -> None:
+            self.ready = True
+            self.voice_id = voice_id
+
+        def synthesize(self, text: str, speaker_id: int | None = None) -> Synthesis:
+            return Synthesis(
+                wav=tone_wav(),
+                sample_rate=22050,
+                duration_seconds=0.4,
+                synth_seconds=0.01,
+                phoneme_type="espeak",
+                model_id=self.voice_id,
+                language=BY_ID[self.voice_id].language,
+                speaker_id=speaker_id,
+            )
+
+    def loader(spec):
+        created.append(spec.voice_id)
+        return Stub(spec.voice_id)
+
+    pool = VoicePool(cache_limit=2, loader=loader)
+    pool.synthesize("Hello.", voice="en_US-joe-medium")
+    pool.synthesize("Bonjour.", voice="fr_FR-siwis-medium")
+    pool.synthesize("안녕하세요.", voice="ko_KR-kss-medium")
+    assert created == ["en_US-joe-medium", "fr_FR-siwis-medium", "ko_KR-kss-medium"]
+    assert list(pool._engines) == ["fr_FR-siwis-medium", "ko_KR-kss-medium"]
+    pool.synthesize("Hello again.", voice="en_US-joe-medium")
+    assert created[-1] == "en_US-joe-medium"
+    assert "fr_FR-siwis-medium" not in pool._engines

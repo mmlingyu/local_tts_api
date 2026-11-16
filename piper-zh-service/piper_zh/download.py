@@ -12,6 +12,7 @@ import tarfile
 import urllib.request
 from pathlib import Path
 
+from .catalog import BY_ID, DEFAULT_BY_LANGUAGE, LANGUAGE_ALIASES, VOICES, VoiceSpec
 from .engine import DEFAULT_G2P_DIR, DEFAULT_HF_HOME, DEFAULT_MODEL, LICENSE_INFO
 
 ROOT = DEFAULT_MODEL.parent
@@ -124,29 +125,93 @@ def _prefetch_tokenizer(hf_home: Path) -> None:
     print(f"tokenizer cache ready under {hf_home}")
 
 
+def _ensure_voice(spec: VoiceSpec) -> None:
+    for path, part in spec.files():
+        if path.is_file() and path.stat().st_size == part.size and _md5(path) == part.md5:
+            print(f"already present {path}")
+            continue
+        filename = "MODEL_CARD" if part.name == "MODEL_CARD" else part.name
+        print(f"downloading {spec.voice_id} {filename}")
+        _download(spec.huggingface_url(filename), path)
+        if path.stat().st_size != part.size or _md5(path) != part.md5:
+            path.unlink(missing_ok=True)
+            raise RuntimeError(f"{spec.voice_id} 的 {filename} 与 voices.json 的大小或 MD5 不一致，已删除。")
+        print(f"verified {path}")
+
+
+def _md5(path: Path) -> str:
+    digest = hashlib.md5()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _selected(voice: str | None, language: str | None) -> list[VoiceSpec]:
+    if voice is None and language is None:
+        return [DEFAULT_BY_LANGUAGE["zh"]]
+    spec = None
+    if voice is not None:
+        spec = BY_ID.get(voice.strip())
+        if spec is None:
+            raise SystemExit(f"拒绝下载白名单以外的音色：{voice}")
+    if language is not None:
+        key = LANGUAGE_ALIASES.get(language.strip().lower())
+        if key is None:
+            raise SystemExit(f"没有这个语言的官方白名单音色：{language}")
+        chosen = DEFAULT_BY_LANGUAGE[key]
+        if spec is not None and spec.language != key:
+            raise SystemExit(f"{spec.voice_id} 不属于 {language}")
+        spec = spec or chosen
+    assert spec is not None
+    return [spec]
+
+
 def run(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Download the chaowen voice and g2pW resources.")
+    parser = argparse.ArgumentParser(description="Download one whitelisted Piper voice. Never downloads every language.")
     parser.add_argument(
         "--confirm",
         action="store_true",
-        help="Required. Without this flag the command only prints the license and exits.",
+        help="Required before any file is fetched. Without it, the command only prints the plan.",
     )
     parser.add_argument("--hf-home", type=Path, default=DEFAULT_HF_HOME)
+    parser.add_argument("--voice", help="Whitelist voice id, for example en_US-joe-medium")
+    parser.add_argument("--language", help="zh, en, ja, ko, or fr. Downloads that language's default voice only.")
+    parser.add_argument("--list", action="store_true", help="Print the whitelist and exit without downloading.")
     args = parser.parse_args(argv)
-    print(LICENSE_INFO["attribution"])
-    print("引擎许可证：", LICENSE_INFO["engine"])
-    print("默认模型：", LICENSE_INFO["recommendedModel"])
-    print("数据许可：", LICENSE_INFO["dataset"], LICENSE_INFO["datasetUrl"])
-    print("训练链：", LICENSE_INFO["baseModel"], LICENSE_INFO["baseLicense"], LICENSE_INFO["baseDatasetUrl"])
-    print("这些文件会写到", ROOT, "和", args.hf_home, "，不会被页面点击触发。")
-    if not args.confirm:
-        print("未下载。确认上述许可和署名后，再执行 python -m piper_zh.download --confirm")
+    if args.list:
+        for spec in VOICES:
+            print(
+                f"{spec.language}\t{spec.voice_id}\t{spec.phoneme_type}\t{spec.dataset_license}\t"
+                f"{spec.onnx_size}\tvoices.md={spec.documented_in_voices_md}"
+            )
+        print("未下载。")
+        return 0
+    try:
+        selected = _selected(args.voice, args.language)
+    except SystemExit as exc:
+        print(exc)
         return 2
-    for name in (ONNX_NAME, JSON_NAME, CARD_NAME, ARCHIVE_NAME):
-        _ensure_file(name)
-    _safe_extract(ROOT / ARCHIVE_NAME, DEFAULT_G2P_DIR)
-    _prefetch_tokenizer(args.hf_home.expanduser().resolve())
-    print("资源已齐。之后可以断网启动 python -m piper_zh")
+    for spec in selected:
+        print(spec.voice_id, spec.dataset_license)
+        print(spec.training)
+        print(spec.commercial_note)
+    print("引擎许可证：", LICENSE_INFO["engine"])
+    print("一次只准备上面列出的音色，不会下载全部语言。")
+    if not args.confirm:
+        print("未下载。确认许可后，再执行同一条命令并加上 --confirm")
+        return 2
+    for spec in selected:
+        spec.directory.mkdir(parents=True, exist_ok=True)
+        _ensure_voice(spec)
+        if spec.phoneme_type == "pinyin":
+            for name in (ONNX_NAME, JSON_NAME, CARD_NAME, ARCHIVE_NAME):
+                _ensure_file(name)
+            _safe_extract(ROOT / ARCHIVE_NAME, DEFAULT_G2P_DIR)
+            _prefetch_tokenizer(args.hf_home.expanduser().resolve())
+        elif spec.phoneme_type == "japanese":
+            print("日语合成还需要已安装的 pyopenjtalk-plus。这条命令不会改用 g2pW。")
+    print("所选资源已处理。页面点击不会触发下载。")
     return 0
 
 

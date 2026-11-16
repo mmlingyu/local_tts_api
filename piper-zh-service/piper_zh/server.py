@@ -10,7 +10,8 @@ from pathlib import Path
 from typing import Callable
 from urllib.parse import urlparse
 
-from .engine import MAX_TEXT_CHARS, DEFAULT_G2P_DIR, DEFAULT_HF_HOME, DEFAULT_MODEL, PiperEngine
+from .catalog import RequestError, inventory, language_rows, parse_tts_fields
+from .engine import DEFAULT_G2P_DIR, DEFAULT_HF_HOME, DEFAULT_MODEL, VoicePool
 
 STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
 STATIC_FILES = {
@@ -87,7 +88,7 @@ def make_handler(state: ServiceState) -> type[BaseHTTPRequestHandler]:
                 self.send_header("Vary", "Origin")
                 self.send_header(
                     "Access-Control-Expose-Headers",
-                    "X-Audio-Duration, X-Synth-Seconds, X-RTF, X-Sample-Rate, X-Engine, X-Model, X-Phoneme-Type, X-Streaming",
+                    "X-Audio-Duration, X-Synth-Seconds, X-RTF, X-Sample-Rate, X-Engine, X-Model, X-Phoneme-Type, X-Streaming, X-Language, X-Voice, X-Speaker-Id",
                 )
             if extra:
                 for key, value in extra.items():
@@ -120,7 +121,7 @@ def make_handler(state: ServiceState) -> type[BaseHTTPRequestHandler]:
             if not self._guard():
                 return
             path = urlparse(self.path).path
-            if path not in {"/api/tts", "/api/health"}:
+            if path not in {"/api/tts", "/api/health", "/api/voices"}:
                 self._json(404, {"error": "没有这个接口。"})
                 return
             self.send_response(204)
@@ -146,7 +147,25 @@ def make_handler(state: ServiceState) -> type[BaseHTTPRequestHandler]:
                 payload = state.engine.status()
                 payload["busy"] = state.busy
                 payload["port"] = state.port
-                self._json(200 if payload.get("modelReady") else 200, payload)
+                self._json(200, payload)
+                return
+            if path == "/api/voices":
+                status_payload = state.engine.status()
+                voices = status_payload.get("voices")
+                languages = status_payload.get("languages")
+                if voices is None:
+                    voices = inventory()
+                    languages = language_rows()
+                self._json(
+                    200,
+                    {
+                        "voices": voices,
+                        "languages": languages,
+                        "cacheLimit": status_payload.get("cacheLimit", 2),
+                        "loadedVoiceIds": status_payload.get("loadedVoiceIds", []),
+                        "note": "列表来自白名单。没有下载地址字段，页面不能提交远程模型。",
+                    },
+                )
                 return
             static = _static_path(path)
             if static is None:
@@ -179,19 +198,10 @@ def make_handler(state: ServiceState) -> type[BaseHTTPRequestHandler]:
             except (UnicodeDecodeError, json.JSONDecodeError):
                 self._json(400, {"error": "JSON 无法解析。"})
                 return
-            if not isinstance(payload, dict) or set(payload) != {"text"}:
-                self._json(400, {"error": "只接受 {\"text\": \"...\"}。不能通过请求指定模型、路径或命令。"})
-                return
-            text = payload["text"]
-            if not isinstance(text, str) or "\x00" in text:
-                self._json(400, {"error": "text 必须是不含空字符的字符串。"})
-                return
-            text = text.strip()
-            if not text:
-                self._json(400, {"error": "请输入要朗读的文本。"})
-                return
-            if len(text) > MAX_TEXT_CHARS:
-                self._json(400, {"error": f"文本不能超过 {MAX_TEXT_CHARS} 个字符。"})
+            try:
+                text, language, voice, speaker = parse_tts_fields(payload)
+            except RequestError as exc:
+                self._json(exc.status, {"error": exc.message, "code": exc.code})
                 return
             if not state.engine.ready:
                 self._json(503, {"error": state.engine.error or "模型还没准备好。", "modelReady": False})
@@ -205,7 +215,11 @@ def make_handler(state: ServiceState) -> type[BaseHTTPRequestHandler]:
 
             def work() -> None:
                 try:
-                    holder["result"] = state.engine.synthesize(text)
+                    holder["result"] = state.engine.synthesize(
+                        text, language=language, voice=voice, speaker=speaker
+                    )
+                except RequestError as exc:
+                    holder["request_error"] = exc
                 except Exception as exc:  # noqa: BLE001
                     holder["error"] = exc
                 finally:
@@ -216,6 +230,10 @@ def make_handler(state: ServiceState) -> type[BaseHTTPRequestHandler]:
             if not finished.wait(SYNTH_TIMEOUT_SECONDS):
                 self._json(504, {"error": "整段合成超过 180 秒，已停止等待。模型仍可能在后台收尾，请稍后再试。"})
                 return
+            if "request_error" in holder:
+                exc = holder["request_error"]
+                self._json(exc.status, {"error": exc.message, "code": exc.code})
+                return
             if "error" in holder:
                 message = str(holder["error"])[:500]
                 self._json(500, {"error": message})
@@ -225,21 +243,22 @@ def make_handler(state: ServiceState) -> type[BaseHTTPRequestHandler]:
                 self._json(500, {"error": "音频时长无效。"})
                 return
             rtf = result.synth_seconds / result.duration_seconds
-            self._send(
-                200,
-                result.wav,
-                "audio/wav",
-                {
-                    "X-Audio-Duration": f"{result.duration_seconds:.6f}",
-                    "X-Synth-Seconds": f"{result.synth_seconds:.6f}",
-                    "X-RTF": f"{rtf:.6f}",
-                    "X-Sample-Rate": str(result.sample_rate),
-                    "X-Engine": "Piper-zh",
-                    "X-Model": result.model_id,
-                    "X-Phoneme-Type": result.phoneme_type,
-                    "X-Streaming": "full-wav",
-                },
-            )
+            extra = {
+                "X-Audio-Duration": f"{result.duration_seconds:.6f}",
+                "X-Synth-Seconds": f"{result.synth_seconds:.6f}",
+                "X-RTF": f"{rtf:.6f}",
+                "X-Sample-Rate": str(result.sample_rate),
+                "X-Engine": "Piper-zh",
+                "X-Model": result.model_id,
+                "X-Phoneme-Type": result.phoneme_type,
+                "X-Streaming": "full-wav",
+                "X-Language": getattr(result, "language", language),
+                "X-Voice": getattr(result, "model_id", voice),
+            }
+            speaker_header = getattr(result, "speaker_id", speaker)
+            if speaker_header is not None:
+                extra["X-Speaker-Id"] = str(speaker_header)
+            self._send(200, result.wav, "audio/wav", extra)
 
     return Handler
 
@@ -269,28 +288,29 @@ def create_server(engine, host: str = "127.0.0.1", port: int = 8791) -> Threadin
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Local Mandarin Piper HTTP service")
+    parser = argparse.ArgumentParser(description="Local Piper HTTP service for the zh/en/ja/ko/fr whitelist")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8791)
     parser.add_argument("--model", type=Path, default=DEFAULT_MODEL)
     parser.add_argument("--g2p-dir", type=Path, default=DEFAULT_G2P_DIR)
     parser.add_argument("--hf-home", type=Path, default=None)
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
+    parser.add_argument("--cache-limit", type=int, default=2)
     args = parser.parse_args(argv)
     if args.host not in {"127.0.0.1", "localhost"}:
         print("拒绝绑定非回环地址。")
         return 2
-    engine = PiperEngine(
-        model_path=args.model,
+    if args.model.name != DEFAULT_MODEL.name:
+        print("拒绝加载白名单以外的模型文件名。")
+        return 2
+    engine = VoicePool(
+        device=args.device,
+        cache_limit=args.cache_limit,
         g2p_dir=args.g2p_dir,
         hf_home=args.hf_home or DEFAULT_HF_HOME,
-        device=args.device,
+        chinese_model=args.model,
     )
-    try:
-        engine.load()
-        print(json.dumps({"modelReady": True, "modelId": engine.model_id, "device": engine.device}, ensure_ascii=False))
-    except Exception as exc:  # noqa: BLE001
-        print(json.dumps({"modelReady": False, "error": str(exc)}, ensure_ascii=False))
+    print(json.dumps({"modelReady": engine.status()["modelReady"], "loadedVoiceIds": [], "device": engine.device, "cacheLimit": engine.cache_limit}, ensure_ascii=False))
     httpd = create_server(engine, args.host, args.port)
     port = httpd.service_state.port  # type: ignore[attr-defined]
     state_path = Path(__file__).resolve().parents[1] / "service-state.json"

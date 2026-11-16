@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { FIRST_AUDIO_NOTE, PRESETS, RTF_DEFINITION, isLoopbackHttp, kokoroAvailableHere, parseWavPcm16, piperApiBase, rtf } from "../static/compare-logic.mjs";
+import { FIRST_AUDIO_NOTE, PRESETS, RTF_DEFINITION, isLoopbackHttp, kokoroAllowedFor, kokoroAvailableHere, parseWavPcm16, piperApiBase, presetsFor, rtf } from "../static/compare-logic.mjs";
 
 test("RTF is full-utterance time divided by audio duration", () => {
   assert.equal(rtf(0.5, 2), 0.25);
@@ -28,6 +28,16 @@ test("Piper endpoint stays on loopback and can leave 8791", () => {
   assert.equal(piperApiBase({ hostname: "127.0.0.1", port: "8787", protocol: "http:" }, ""), "http://127.0.0.1:8791");
   assert.equal(piperApiBase({ hostname: "127.0.0.1", port: "8787", protocol: "http:" }, "http://127.0.0.1:8800"), "http://127.0.0.1:8800");
   assert.equal(piperApiBase({ hostname: "127.0.0.1", port: "8800", protocol: "http:" }, "http://evil.example:8800"), "http://127.0.0.1:8800");
+});
+
+test("Kokoro stays on Chinese and other languages have their own lines", () => {
+  assert.equal(kokoroAllowedFor("zh"), true);
+  for (const language of ["en", "ja", "ko", "fr"]) {
+    assert.equal(kokoroAllowedFor(language), false);
+    assert.ok(presetsFor(language).length > 0);
+    assert.ok(presetsFor(language).every((item) => item.text.length <= 2000));
+  }
+  assert.equal(presetsFor("zh").length, PRESETS.length);
 });
 
 test("Kokoro is only offered on the existing Chinese page origin", () => {
