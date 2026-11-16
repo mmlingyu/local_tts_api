@@ -127,6 +127,21 @@ def ready_record(sample_rate: int) -> dict:
     }
 
 
+def not_ready_reason(installed: bool, data: dict | None) -> str | None:
+    """None means this variant is prepared. Otherwise the caller must not download or switch engines."""
+    if not installed:
+        return "Pocket 虚拟环境还没装。请在 pocket-tts-service 里准备，不要装进 Piper 的虚拟环境。"
+    if data is None:
+        return "没有 models/ready.json。不会下载权重，也不会改用 Piper。"
+    if not ready_is_current(data):
+        found = data.get("variant")
+        return (
+            f"ready.json 的 variant 是 {found!r}，不是 {DEFAULT_VARIANT}。"
+            "旧标记或不匹配的标记不能沿用，也不会下载。"
+        )
+    return None
+
+
 def ready_is_current(data: dict | None) -> bool:
     if not isinstance(data, dict):
         return False

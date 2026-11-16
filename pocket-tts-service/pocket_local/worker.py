@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import wave
 from io import BytesIO
+from pathlib import Path
 
-from pocket_local.catalog import DEFAULT_VARIANT, parse_pocket
+from pocket_local.catalog import DEFAULT_VARIANT, not_ready_reason, parse_pocket, ready_is_current
 
 
 def _pcm16(audio) -> tuple[bytes, int]:
@@ -30,9 +32,18 @@ def _wav(pcm: bytes, rate: int) -> bytes:
     return buffer.getvalue()
 
 
-def main() -> int:
-    from pocket_tts import TTSModel
+def _ready_data() -> dict | None:
+    path = Path(os.environ.get("POCKET_READY", ""))
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {"variant": None}
+    return data if isinstance(data, dict) else {"variant": None}
 
+
+def main() -> int:
     model = None
     loaded = None
     cached_voice = None
@@ -54,6 +65,16 @@ def main() -> int:
             )
             if variant != DEFAULT_VARIANT:
                 raise RuntimeError("只加载 english_18m_2026-10。")
+            reason = not_ready_reason(True, _ready_data())
+            if reason:
+                body = {"ok": False, "code": "model_not_ready", "error": reason}
+                sys.stdout.write(json.dumps(body) + "\n")
+                sys.stdout.flush()
+                continue
+            if not ready_is_current(_ready_data()):
+                raise RuntimeError("准备标记校验失败。")
+            from pocket_tts import TTSModel
+
             if model is None or loaded != variant:
                 model = TTSModel.load_model(language=variant)
                 loaded = variant

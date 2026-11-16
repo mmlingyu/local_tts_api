@@ -361,6 +361,56 @@ def test_pocket_engine_is_opt_in_and_rejects_unsupported_languages(server):
     assert json.loads(body)["voices"][0]["voice"] == "alba"
 
 
+def test_unprepared_pocket_is_503_through_the_real_worker(server):
+    import sys
+    from pathlib import Path
+
+    from pocket_local.bridge import PocketBridge
+
+    httpd, engine, base = server
+    missing = Path("/tmp/pocket-missing-ready.json")
+    missing.unlink(missing_ok=True)
+    stale = Path("/tmp/pocket-stale-ready.json")
+    stale.write_text('{"languages":["english"],"sampleRate":24000}', encoding="utf-8")
+    missing_bridge = PocketBridge(program=Path(sys.executable), ready_path=missing)
+    httpd.service_state.pocket = missing_bridge
+    try:
+        status, _headers, body = request(
+            base,
+            "/api/tts",
+            {"engine": "pocket", "text": "Hello.", "language": "en", "voice": "alba", "variant": "english_18m_2026-10"},
+        )
+        assert status == 503
+        payload = json.loads(body)
+        assert payload["code"] == "model_not_ready"
+        assert "ready.json" in payload["error"]
+        assert engine.calls == []
+        status, _headers, body = request(base, "/api/tts", {"engine": "pocket", "text": "Hello."})
+        assert status == 503
+        assert json.loads(body)["code"] == "model_not_ready"
+        health = json.loads(request(base, "/api/health")[2])
+        assert health["engines"]["pocket"]["modelReady"] is False
+        assert health["engines"]["pocket"]["code"] == "model_not_ready"
+        voices = json.loads(request(base, "/api/voices?engine=pocket")[2])
+        assert voices["modelReady"] is False
+        assert voices["code"] == "model_not_ready"
+        assert voices["variant"] == "english_18m_2026-10"
+    finally:
+        missing_bridge.close()
+
+    stale_bridge = PocketBridge(program=Path(sys.executable), ready_path=stale)
+    httpd.service_state.pocket = stale_bridge
+    try:
+        status, _headers, body = request(base, "/api/tts", {"engine": "pocket", "text": "Hello.", "language": "english"})
+        assert status == 503
+        payload = json.loads(body)
+        assert payload["code"] == "model_not_ready"
+        assert "english_18m_2026-10" in payload["error"]
+        assert engine.calls == []
+    finally:
+        stale_bridge.close()
+
+
 def test_voice_cache_drops_the_oldest_and_stays_serial():
     from piper_zh.catalog import BY_ID
     from piper_zh.engine import Synthesis, VoicePool

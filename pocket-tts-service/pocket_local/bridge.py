@@ -8,7 +8,15 @@ import sys
 import threading
 from pathlib import Path
 
-from .catalog import DEFAULT_PARAMETERS, DEFAULT_VARIANT, PUBLISHED_SAMPLE_RATE, languages, ready_is_current, voices
+from .catalog import (
+    DEFAULT_PARAMETERS,
+    DEFAULT_VARIANT,
+    PUBLISHED_SAMPLE_RATE,
+    languages,
+    not_ready_reason,
+    ready_is_current,
+    voices,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 READY_MARKER = ROOT / "models" / "ready.json"
@@ -23,30 +31,44 @@ def python_path() -> Path | None:
 
 
 class PocketBridge:
-    def __init__(self) -> None:
+    def __init__(self, program: Path | None = None, ready_path: Path | None = None) -> None:
         self._lock = threading.Lock()
         self._proc: subprocess.Popen | None = None
+        self._program = program
+        self._ready_path = ready_path or READY_MARKER
+
+    def _interpreter(self) -> Path | None:
+        if self._program is not None:
+            return self._program if self._program.is_file() else None
+        return python_path()
 
     def _ready_data(self) -> dict | None:
-        if not READY_MARKER.is_file():
+        if not self._ready_path.is_file():
             return None
         try:
-            data = json.loads(READY_MARKER.read_text(encoding="utf-8"))
+            data = json.loads(self._ready_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
-            return None
-        return data if isinstance(data, dict) else None
+            return {"variant": None}
+        return data if isinstance(data, dict) else {"variant": None}
+
+    def _readiness(self) -> tuple[bool, str | None]:
+        program = self._interpreter()
+        ready = self._ready_data()
+        return program is not None and ready_is_current(ready), not_ready_reason(program is not None, ready)
 
     def status(self) -> dict:
-        program = python_path()
+        program = self._interpreter()
         ready = self._ready_data()
-        current = ready_is_current(ready)
+        current, reason = self._readiness()
         return {
             "installed": program is not None,
             "python": str(program) if program else None,
             "prepared": current,
             "preparedVariant": None if ready is None else ready.get("variant"),
             "loaded": self._proc is not None and self._proc.poll() is None,
-            "modelReady": program is not None and current,
+            "modelReady": current,
+            "code": None if current else "model_not_ready",
+            "reason": reason,
             "variant": DEFAULT_VARIANT,
             "parameters": DEFAULT_PARAMETERS,
             "gated": True,
@@ -62,24 +84,29 @@ class PocketBridge:
         }
 
     def voices(self) -> dict:
-        return {"engine": "pocket", "voices": voices(), "languages": languages()}
+        current, reason = self._readiness()
+        return {
+            "engine": "pocket",
+            "voices": voices(),
+            "languages": languages(),
+            "variant": DEFAULT_VARIANT,
+            "modelReady": current,
+            "code": None if current else "model_not_ready",
+            "reason": reason,
+        }
+
+    def _not_ready(self, message: str):
+        from piper_zh.catalog import RequestError
+
+        raise RequestError(message, 503, "model_not_ready")
 
     def synthesize(self, text: str, language: str, voice: str, variant: str):
-        program = python_path()
+        program = self._interpreter()
+        reason = not_ready_reason(program is not None, self._ready_data())
         if program is None:
-            raise RuntimeError("Pocket 虚拟环境还没装。请在 pocket-tts-service 里运行准备脚本，不要装进 Piper 的虚拟环境。")
-        if not READY_MARKER.is_file():
-            raise RuntimeError(
-                "Pocket 权重还没准备。请在该虚拟环境执行 python -m pocket_local.prepare --confirm。"
-                "页面点击不会下载。模型仓库 kyutai/pocket-tts 需要先在 Hugging Face 接受许可。"
-            )
-        if not ready_is_current(self._ready_data()):
-            raise RuntimeError(
-                "准备标记不是 english_18m_2026-10。旧的 ready.json 不能沿用。"
-                "请重新执行 python -m pocket_local.prepare --confirm --variant english_18m_2026-10。"
-            )
+            self._not_ready(reason or "Pocket 虚拟环境还没装。")
         if variant != DEFAULT_VARIANT:
-            raise RuntimeError("worker 只加载 english_18m_2026-10。")
+            self._not_ready("worker 只加载 english_18m_2026-10。")
         from piper_zh.engine import Synthesis
         import time
 
@@ -125,15 +152,19 @@ class PocketBridge:
             raise RuntimeError("Pocket worker 没有返回结果。")
         payload = json.loads(line.decode("utf-8"))
         if not payload.get("ok"):
-            raise RuntimeError(payload.get("error") or "Pocket worker 失败。")
+            from piper_zh.catalog import RequestError
+
+            code = payload.get("code") or "pocket_failed"
+            status = 503 if code == "model_not_ready" else 500
+            raise RequestError(payload.get("error") or "Pocket worker 失败。", status, code)
         return payload
 
     def _ensure(self) -> subprocess.Popen:
         if self._proc is not None and self._proc.poll() is None:
             return self._proc
-        program = python_path()
+        program = self._interpreter()
         if program is None:
-            raise RuntimeError("Pocket 虚拟环境还没装。")
+            self._not_ready("Pocket 虚拟环境还没装。")
         self._proc = subprocess.Popen(
             [str(program), "-m", "pocket_local.worker"],
             cwd=ROOT,
@@ -145,7 +176,7 @@ class PocketBridge:
                 "HF_HOME": str(ROOT / "models" / "hf-home"),
                 "HF_HUB_OFFLINE": "1",
                 "HF_HUB_DISABLE_TELEMETRY": "1",
-                "POCKET_READY": str(READY_MARKER),
+                "POCKET_READY": str(self._ready_path),
             },
         )
         return self._proc

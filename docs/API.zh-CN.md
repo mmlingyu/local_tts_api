@@ -25,7 +25,7 @@
 {"engine":"pocket","text":"Hello.","language":"en","voice":"alba","variant":"english_18m_2026-10"}
 ```
 
-`language` 是自然语言，当前只接受 `en` 或 `english`。`variant` 是模型 ID。省略 `variant` 时锁定 `english_18m_2026-10`（18.2M，含 decoder）。`english` 是上游约 100M 的默认模型，传它会返回 400，不会静默加载。`english_7m_2026-10`（6.9M）和 `english_2m_2026-10`（1.9M，实验档）官方有这个 ID，但本服务没有启用，也没有测过。`voice` 当前只接受内置名 `alba`。中文、日语、韩语返回 400，不会改用 Piper。模型仍需先在 Hugging Face 接受许可。准备步骤见 `pocket-tts-service/README.zh-CN.md`。
+`language` 是自然语言，当前只接受 `en` 或 `english`。`variant` 是模型 ID。省略 `variant` 时锁定 `english_18m_2026-10`（18.2M，含 decoder）。`english` 是上游约 100M 的默认模型，传它会返回 400，不会静默加载。`english_7m_2026-10`（6.9M）和 `english_2m_2026-10`（1.9M，实验档）官方有这个 ID，但本服务没有启用，也没有测过。`voice` 当前只接受内置名 `alba`。中文、日语、韩语返回 400，不会改用 Piper。虚拟环境没装、没有 `models/ready.json`，或标记不是 `english_18m_2026-10` 时，合成返回 HTTP 503，`code` 为 `model_not_ready`。`/api/health` 和 `/api/voices?engine=pocket` 使用同一个 `code`。这个状态不会下载权重。模型仍需先在 Hugging Face 接受许可。准备步骤见 `pocket-tts-service/README.zh-CN.md`。
 
 对照页的地址规则：
 
