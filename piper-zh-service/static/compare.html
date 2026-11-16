@@ -4,7 +4,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
 <title>Piper 与 Kokoro 对照测试</title>
-<link rel="stylesheet" href="/piper-compare.css?v=20261116b">
+<link rel="stylesheet" href="/piper-compare.css?v=20261116e">
 <main>
   <h1>Piper 与 Kokoro 对照测试</h1>
   <p class="lede">默认中文合成仍是 8787 上的 Kokoro。Piper 是可选的本机服务，白名单里有中文、英语、日语、韩语和法语。点击不会下载模型。Phonon 的英文页面保持原样，不在这里被替换。</p>
@@ -28,6 +28,9 @@
         <option value="piper" selected>Piper（默认）</option>
         <option value="pocket">Pocket TTS（english_18m_2026-10，18.2M）</option>
       </select>
+    </label>
+    <label id="pocket-voice-label">Pocket 音色（18.2M 内置 27 个，性别未知）
+      <select id="pocket-voice"></select>
     </label>
     <label>Piper 语言
       <select id="piper-language">
@@ -77,14 +80,16 @@
   <div id="presets" class="presets"></div>
   <div class="row">
     <button class="primary" id="run-one" type="button">合成当前文本</button>
+    <button id="run-both" type="button">同一英文文本分别合成 Piper 和 Pocket</button>
     <button id="run-all" type="button">按预设逐条跑当前引擎</button>
     <button id="stop" type="button" disabled>停止后续条目</button>
   </div>
+  <p class="note" id="pocket-readiness">Pocket 只和英语 Piper 比同一段文字。中文、日语、韩语、法语仍只走 Piper，不会改成英语再比较。整段耗时不是首音，也不是音质排名。缺音色时页面不会下载。文件标记已在，也不表示这次推理已经成功。</p>
   <p class="note" id="rtf-definition"></p>
 
   <h2>结果</h2>
   <p>自动测量和人工音质分开。人工音质只留在这个页面上，不提交，也不改变耗时或 RTF。</p>
   <div id="results"></div>
 </main>
-<script type="module" src="/piper-compare.js?v=20261116c"></script>
+<script type="module" src="/piper-compare.js?v=20261116e"></script>
 </html>

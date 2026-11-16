@@ -272,21 +272,63 @@ export function piperSupportsLanguageFields(health, voicesOk) {
   return true;
 }
 
-export const POCKET_VOICES = {
-  english: ["alba"],
-  french: ["estelle"],
-  german: ["juergen"],
-  portuguese: ["rafael"],
-  italian: ["giovanni"],
-  spanish: ["lola"],
-  dutch: ["daan"],
-};
-
 export const POCKET_VARIANT = "english_18m_2026-10";
+
+// Stems of kyutai/pocket-tts-without-voice-cloning languages/english_18m_2026-10/embeddings
+// at a7056f505a4a8ca72d8b5fb1440071d6f1a35739, matching pocket-tts 4.0.1.
+export const POCKET_VOICES = [
+  "alba",
+  "anna",
+  "azelma",
+  "bill_boerst",
+  "caro_davy",
+  "charles",
+  "cosette",
+  "daan",
+  "eponine",
+  "estelle",
+  "eve",
+  "fantine",
+  "george",
+  "giovanni",
+  "jane",
+  "javert",
+  "jean",
+  "juergen",
+  "lola",
+  "marius",
+  "mary",
+  "michael",
+  "paul",
+  "peter_yearsley",
+  "rafael",
+  "stuart_bell",
+  "vera",
+];
+
+export const POCKET_PREPARE_COMMAND = "python -m pocket_local.prepare --confirm --variant english_18m_2026-10";
+
+export const POCKET_NON_ENGLISH =
+  "Pocket 18.2M 只比较英语同文本。当前不是英语，不会把这段文字交给英语模型，也不会改用 Piper。";
+
+export function pocketCompareAllowed(language) {
+  return language === "en" || language === "english";
+}
+
+export function pocketVoiceError(language, voice, prepared) {
+  if (!pocketCompareAllowed(language)) return POCKET_NON_ENGLISH;
+  if (!POCKET_VOICES.includes(voice)) return `${voice || "这个音色"} 不是 18.2M 的内置音色。`;
+  if (prepared === false) {
+    return `${voice} 还没准备。执行 ${POCKET_PREPARE_COMMAND}。已有 hf-home 会复用，页面不会下载。`;
+  }
+  return null;
+}
 
 export function pocketRequest(text, language, voice, supportsLanguageFields) {
   if (!supportsLanguageFields) return null;
-  return { engine: "pocket", text, language, voice, variant: POCKET_VARIANT };
+  if (!pocketCompareAllowed(language)) return null;
+  if (!POCKET_VOICES.includes(voice)) return null;
+  return { engine: "pocket", text, language: "english", voice, variant: POCKET_VARIANT };
 }
 
 export function ttsPayload(text, selection, supportsLanguageFields) {

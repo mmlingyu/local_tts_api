@@ -10,11 +10,14 @@ import {
   parseWavPcm16,
   piperApiBase,
   piperSupportsLanguageFields,
+  POCKET_VOICES,
+  pocketCompareAllowed,
   pocketRequest,
+  pocketVoiceError,
   presetsFor,
   rtf,
   ttsPayload,
-} from "./piper-compare-logic.mjs?v=20261116c";
+} from "./piper-compare-logic.mjs?v=20261116e";
 
 const GENDER_LABEL = { female: "女", male: "男", unknown: "性别未知", multiple: "男女声在同一模型" };
 const FALLBACK_VOICES = [
@@ -138,6 +141,7 @@ function renderPresets() {
 function setBusy(value) {
   running = value;
   $("run-one").disabled = value;
+  $("run-both").disabled = value;
   $("run-all").disabled = value;
   $("stop").disabled = !value;
   $("engine").disabled = value;
@@ -175,6 +179,21 @@ async function refreshHealth() {
     return;
   }
   const data = health;
+  const pocket = data.engines && data.engines.pocket;
+  const pocketNote = $("pocket-readiness");
+  if (pocket && pocketNote) {
+    const fileReady = pocket.prepared === true || pocket.modelReady === true;
+    const infer = pocket.inferenceReady === true;
+    const bits = [
+      `Pocket 文件标记${fileReady ? "已在" : "未就绪"}`,
+      `推理${infer ? "已成功过且进程仍在" : "尚未成功"}`,
+    ];
+    if (pocket.voicesComplete === false) bits.push("内置音色未齐");
+    if (pocket.reason) bits.push(pocket.reason);
+    if (pocket.lastError) bits.push(`上次错误：${pocket.lastError}`);
+    bits.unshift("Pocket 只和英语同文本比较。整段耗时不是首音，也不是音质排名。页面点击不会下载。");
+    pocketNote.textContent = bits.join("。");
+  }
   const ready = data.modelReady === true;
   const title = document.createElement("strong");
   title.className = piperState === "legacy" ? "warn" : ready ? "ok" : "warn";
@@ -234,6 +253,18 @@ function metric(label, value) {
 }
 
 function renderResult(record) {
+  const card = buildCard(record);
+  $("results").prepend(card);
+}
+
+function renderPair(records) {
+  const section = document.createElement("section");
+  section.className = "pair";
+  for (const record of records) section.append(buildCard(record));
+  $("results").prepend(section);
+}
+
+function buildCard(record) {
   const card = document.createElement("article");
   card.className = "result";
   const title = document.createElement("h3");
@@ -244,6 +275,9 @@ function renderResult(record) {
   const metrics = document.createElement("div");
   metrics.className = "metrics";
   metrics.append(
+    metric("引擎响应", record.engineHeader || record.engineLabel || "—"),
+    metric("variant / 模型", record.variant || "—"),
+    metric("voice", record.voiceName || "—"),
     metric("整段合成耗时", record.synthSeconds == null ? "—" : `${formatSeconds(record.synthSeconds)} 秒`),
     metric("音频时长", record.durationSeconds == null ? "—" : `${formatSeconds(record.durationSeconds)} 秒`),
     metric("RTF", record.rtfValue == null ? "—" : record.rtfValue.toFixed(3)),
@@ -283,42 +317,58 @@ function renderResult(record) {
   humanLabel.append(select);
   human.append(humanLabel, note);
   card.append(human);
-  $("results").prepend(card);
+  return card;
 }
 
-async function runPiper(text) {
-  const started = performance.now();
+let pocketPrepared = null;
+
+function fillPocketVoices(rows) {
+  const select = $("pocket-voice");
+  if (!select) return;
+  const previous = select.value || "alba";
+  select.replaceChildren();
+  const source = rows && rows.length ? rows : POCKET_VOICES.map((voice) => ({ voice, prepared: undefined }));
+  pocketPrepared = {};
+  for (const item of source) {
+    if (item.prepared === true || item.prepared === false) pocketPrepared[item.voice] = item.prepared;
+    const option = document.createElement("option");
+    option.value = item.voice;
+    option.textContent = item.prepared === false ? `${item.voice}（未准备）` : item.voice;
+    select.append(option);
+  }
+  if ([...select.options].some((option) => option.value === previous)) select.value = previous;
+}
+
+function piperSelection() {
   const selection = { language: currentLanguage(), voice: $("piper-voice").value };
   if (!$("piper-speaker-label").hidden && $("piper-speaker").value !== "") {
     selection.speaker = Number($("piper-speaker").value);
   }
-  let body;
-  if ($("synth-engine") && $("synth-engine").value === "pocket") {
-    const mapped = {
-      en: ["english", "alba"],
-      fr: ["french", "estelle"],
-    }[currentLanguage()];
-    if (!mapped) {
-      return { ok: false, error: "Pocket TTS 官方不支持这个语言，不会改用 Piper。", roundTripSeconds: 0 };
-    }
-    body = pocketRequest(text, mapped[0], mapped[1], languageFields);
-  } else {
-    body = ttsPayload(text, selection, languageFields);
-  }
-  if (!body) {
-    const error = piperState === "down"
-      ? "Piper 服务没有响应"
-      : piperState === "pending"
-        ? "正在确认 Piper 版本，还没有发送合成请求。"
-        : LEGACY_PIPER_MESSAGE;
-    return { ok: false, error, roundTripSeconds: 0 };
-  }
+  return selection;
+}
+
+function blockedPayload(message) {
+  return { ok: false, error: message, roundTripSeconds: 0 };
+}
+
+function legacyOrDownError() {
+  if (piperState === "down") return "Piper 服务没有响应";
+  if (piperState === "pending") return "正在确认 Piper 版本，还没有发送合成请求。";
+  return LEGACY_PIPER_MESSAGE;
+}
+
+async function submitTts(body) {
+  if (!body) return blockedPayload(legacyOrDownError());
+  const started = performance.now();
   const response = await fetch(`${piperApi}/api/tts`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   const roundTripSeconds = (performance.now() - started) / 1000;
+  const engineHeader = response.headers.get("X-Engine");
+  const variant = response.headers.get("X-Model");
+  const voiceName = response.headers.get("X-Voice");
   if (!response.ok) {
     let message = `HTTP ${response.status}`;
     try {
@@ -327,26 +377,52 @@ async function runPiper(text) {
     } catch {
       /* 保留 HTTP 状态 */
     }
-    return { ok: false, error: message, roundTripSeconds };
+    return { ok: false, error: message, roundTripSeconds, engineHeader, variant, voiceName };
   }
   const synthSeconds = Number(response.headers.get("X-Synth-Seconds"));
   const streaming = response.headers.get("X-Streaming");
   if (streaming && streaming !== "full-wav") {
-    return { ok: false, error: `响应声明了非预期的流式模式：${streaming}`, roundTripSeconds };
+    return { ok: false, error: `响应声明了非预期的流式模式：${streaming}`, roundTripSeconds, engineHeader, variant, voiceName };
   }
   const buffer = await response.arrayBuffer();
   const parsed = parseWavPcm16(buffer);
-  const value = rtf(synthSeconds, parsed.durationSeconds);
   const blob = new Blob([buffer], { type: "audio/wav" });
   return {
     ok: true,
     synthSeconds,
     durationSeconds: parsed.durationSeconds,
-    rtfValue: value,
+    rtfValue: rtf(synthSeconds, parsed.durationSeconds),
     roundTripSeconds,
     wavUrl: URL.createObjectURL(blob),
     sampleRate: parsed.sampleRate,
+    engineHeader,
+    variant,
+    voiceName,
   };
+}
+
+function pocketBody(text) {
+  const voice = $("pocket-voice").value;
+  const prepared = pocketPrepared && Object.prototype.hasOwnProperty.call(pocketPrepared, voice)
+    ? pocketPrepared[voice]
+    : undefined;
+  const blocked = pocketVoiceError(currentLanguage(), voice, prepared);
+  if (blocked) return { error: blocked };
+  return { body: pocketRequest(text, currentLanguage(), voice, languageFields) };
+}
+
+async function runPiper(text) {
+  if ($("synth-engine") && $("synth-engine").value === "pocket") {
+    const pocket = pocketBody(text);
+    if (pocket.error) return blockedPayload(pocket.error);
+    const outcome = await submitTts(pocket.body);
+    if (!outcome.voiceName) outcome.voiceName = $("pocket-voice").value;
+    if (!outcome.variant) outcome.variant = "english_18m_2026-10";
+    return outcome;
+  }
+  const outcome = await submitTts(ttsPayload(text, piperSelection(), languageFields));
+  if (!outcome.voiceName) outcome.voiceName = $("piper-voice").value;
+  return outcome;
 }
 
 async function runKokoro(text) {
@@ -382,11 +458,12 @@ async function runKokoro(text) {
 
 async function runItem(item) {
   const engine = $("engine").value;
+  const pocketMode = engine === "piper" && $("synth-engine") && $("synth-engine").value === "pocket";
   const record = {
-    engineLabel: engine === "piper" ? "Piper" : `Kokoro ${$("kokoro-voice").value}`,
+    engineLabel: pocketMode ? "Pocket TTS" : engine === "piper" ? "Piper" : `Kokoro ${$("kokoro-voice").value}`,
     label: item.label,
     text: item.text,
-    downloadName: `${engine}-${item.id}.wav`,
+    downloadName: pocketMode ? `pocket-${$("pocket-voice").value}-${item.id}.wav` : `${engine}-${item.id}.wav`,
   };
   try {
     const outcome = engine === "piper" ? await runPiper(item.text) : await runKokoro(item.text);
@@ -397,6 +474,32 @@ async function runItem(item) {
   }
   renderResult(record);
   return record.ok !== false && record.ok !== undefined ? record.ok : false;
+}
+
+async function runEnglishPair(text) {
+  if (!pocketCompareAllowed(currentLanguage())) {
+    renderResult({
+      engineLabel: "Pocket 与 Piper",
+      label: "英语对照",
+      text,
+      ok: false,
+      error: pocketVoiceError(currentLanguage(), $("pocket-voice").value, true),
+    });
+    return;
+  }
+  const piperBody = ttsPayload(text, piperSelection(), languageFields);
+  const pocket = pocketBody(text);
+  const piperOutcome = await submitTts(piperBody);
+  const pocketOutcome = pocket.error
+    ? blockedPayload(pocket.error)
+    : await submitTts(pocket.body);
+  if (!piperOutcome.voiceName) piperOutcome.voiceName = $("piper-voice").value;
+  if (!pocketOutcome.voiceName) pocketOutcome.voiceName = $("pocket-voice").value;
+  if (!pocketOutcome.variant && !pocket.error) pocketOutcome.variant = "english_18m_2026-10";
+  renderPair([
+    { engineLabel: "Piper", label: "英语同文本", text, downloadName: "piper-en.wav", ...piperOutcome },
+    { engineLabel: "Pocket TTS", label: "英语同文本", text, downloadName: `pocket-${$("pocket-voice").value}.wav`, ...pocketOutcome },
+  ]);
 }
 
 async function runOne() {
@@ -435,8 +538,11 @@ async function refreshVoices() {
   renderVoiceChoices();
   renderPresets();
   updateGenderCoverage();
+  await refreshPocketVoices();
   return voicesOk;
 }
+
+fillPocketVoices();
 
 function updateGenderCoverage() {
   const coverage = $("gender-coverage");
@@ -468,7 +574,36 @@ async function runAll() {
   }
 }
 
+async function refreshPocketVoices() {
+  try {
+    const response = await fetch(`${piperApi}/api/voices?engine=pocket`, { cache: "no-store" });
+    if (!response.ok) return;
+    const data = await response.json();
+    if (Array.isArray(data.voices) && data.voices.length) fillPocketVoices(data.voices);
+  } catch {
+    /* 保留页面里的 27 个内置名 */
+  }
+}
+
+async function runBoth() {
+  if (running) return;
+  const text = $("text").value.trim();
+  if (!text) {
+    renderResult({ engineLabel: "Pocket 与 Piper", label: "英语对照", text: "", ok: false, error: "请输入文本。" });
+    return;
+  }
+  setBusy(true);
+  stopRequested = false;
+  try {
+    await runEnglishPair(text);
+  } finally {
+    setBusy(false);
+    refreshHealth();
+  }
+}
+
 $("run-one").addEventListener("click", () => runOne());
+$("run-both").addEventListener("click", () => runBoth());
 $("run-all").addEventListener("click", () => runAll());
 $("stop").addEventListener("click", () => {
   stopRequested = true;

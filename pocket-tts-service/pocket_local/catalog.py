@@ -1,8 +1,13 @@
 """Builtin Pocket TTS languages and voices.
 
-Names come from pocket-tts 4.0.1 `default_parameters.py` and
-`_ORIGINS_OF_PREDEFINED_VOICES`. A request cannot pass a file path, URL, or
-`hf://` reference. Chinese, Japanese, and Korean are not in the upstream list.
+pocket-tts 4.0.1 `get_predefined_voice` maps a builtin name to
+`hf://kyutai/pocket-tts-without-voice-cloning/languages/{variant}/embeddings/{name}.safetensors`
+at revision a7056f505a4a8ca72d8b5fb1440071d6f1a35739. For
+`english_18m_2026-10` that directory contains 27 safetensors, the same 27 keys
+as `_ORIGINS_OF_PREDEFINED_VOICES`. Clients cannot pass a path, URL, or `hf://`.
+Those origin strings do not state gender. Chinese, Japanese, and Korean are
+not Pocket languages, and the 18.2M model is not given a French or other
+natural language just because a voice name also appears in another catalog.
 """
 
 from __future__ import annotations
@@ -15,7 +20,9 @@ PUBLISHED_SAMPLE_RATE = 24000
 # Official small-model id. `language="english"` in pocket-tts is the ~100M model.
 DEFAULT_VARIANT = "english_18m_2026-10"
 DEFAULT_PARAMETERS = "18.2M"
-MARKER_VERSION = 2
+MARKER_VERSION = 3
+VOICE_EMBEDDING_REVISION = "a7056f505a4a8ca72d8b5fb1440071d6f1a35739"
+PREPARE_COMMAND = "python -m pocket_local.prepare --confirm --variant english_18m_2026-10"
 
 # Known upstream ids that this service does not load.
 REJECTED_VARIANTS = {
@@ -29,9 +36,9 @@ LANGUAGES = {
     "english": {"voice": "alba", "aliases": ("en", "en_us", "en-us")},
 }
 
-# English names are the README entries marked (en). Other languages only have
-# the one default voice named by upstream. Gender is not stated in those files.
-ENGLISH_VOICES = (
+# Alphabetical stems of languages/english_18m_2026-10/embeddings/*.safetensors
+# at VOICE_EMBEDDING_REVISION. Gender is unknown; nothing in that listing states it.
+BUILTIN_VOICES = (
     "alba",
     "anna",
     "azelma",
@@ -39,24 +46,30 @@ ENGLISH_VOICES = (
     "caro_davy",
     "charles",
     "cosette",
+    "daan",
     "eponine",
+    "estelle",
     "eve",
     "fantine",
     "george",
+    "giovanni",
     "jane",
-    "jean",
     "javert",
+    "jean",
+    "juergen",
+    "lola",
     "marius",
     "mary",
     "michael",
     "paul",
     "peter_yearsley",
+    "rafael",
     "stuart_bell",
     "vera",
 )
 
 VOICES_BY_LANGUAGE = {
-    "english": ("alba",),
+    "english": BUILTIN_VOICES,
 }
 
 _ALIAS = {}
@@ -95,7 +108,7 @@ def voices() -> list[dict]:
                     "parameters": DEFAULT_PARAMETERS,
                     "defaultForLanguage": name == LANGUAGES[language]["voice"],
                     "gender": "unknown",
-                    "genderSource": "https://github.com/kyutai-labs/pocket-tts/blob/main/README.md",
+                    "genderSource": "pocket-tts 4.0.1 _ORIGINS_OF_PREDEFINED_VOICES has no gender field",
                     "sampleRate": PUBLISHED_SAMPLE_RATE,
                     "builtin": True,
                 }
@@ -117,18 +130,61 @@ def languages() -> list[dict]:
     ]
 
 
-def ready_record(sample_rate: int) -> dict:
+def ready_record(sample_rate: int, voices: list[str] | None = None) -> dict:
+    allowed = set(BUILTIN_VOICES)
+    names: list[str] = []
+    for name in voices or []:
+        if name in allowed and name not in names:
+            names.append(name)
     return {
         "markerVersion": MARKER_VERSION,
         "variant": DEFAULT_VARIANT,
         "parameters": DEFAULT_PARAMETERS,
-        "voice": "alba",
+        "modelPrepared": True,
+        "voices": names,
         "sampleRate": sample_rate,
     }
 
 
+def ready_is_current(data: dict | None) -> bool:
+    """True when the 18.2M weight marker is current. Voice completeness is separate."""
+    if not isinstance(data, dict) or data.get("variant") != DEFAULT_VARIANT:
+        return False
+    version = data.get("markerVersion")
+    if version == MARKER_VERSION:
+        return data.get("modelPrepared") is True
+    # markerVersion 2 only recorded alba, after the 18.2M weights were cached.
+    return version == 2 and data.get("voice") == "alba"
+
+
+def prepared_voice_names(data: dict | None) -> list[str]:
+    if not ready_is_current(data):
+        return []
+    assert data is not None
+    if data.get("markerVersion") == 2:
+        return ["alba"]
+    raw = data.get("voices")
+    if not isinstance(raw, list):
+        return []
+    allowed = set(BUILTIN_VOICES)
+    names: list[str] = []
+    for name in raw:
+        if isinstance(name, str) and name in allowed and name not in names:
+            names.append(name)
+    return names
+
+
+def voices_complete(data: dict | None) -> bool:
+    return set(prepared_voice_names(data)) == set(BUILTIN_VOICES)
+
+
+def missing_voice_names(data: dict | None) -> list[str]:
+    prepared = set(prepared_voice_names(data))
+    return [name for name in BUILTIN_VOICES if name not in prepared]
+
+
 def not_ready_reason(installed: bool, data: dict | None) -> str | None:
-    """None means this variant is prepared. Otherwise the caller must not download or switch engines."""
+    """None means the 18.2M weight marker is current. Otherwise do not download or switch engines."""
     if not installed:
         return "Pocket 虚拟环境还没装。请在 pocket-tts-service 里准备，不要装进 Piper 的虚拟环境。"
     if data is None:
@@ -142,13 +198,26 @@ def not_ready_reason(installed: bool, data: dict | None) -> str | None:
     return None
 
 
-def ready_is_current(data: dict | None) -> bool:
-    if not isinstance(data, dict):
-        return False
+def incomplete_reason(data: dict | None) -> str:
+    prepared = prepared_voice_names(data)
+    missing = missing_voice_names(data)
+    prepared_text = ", ".join(prepared) if prepared else "无"
+    missing_text = ", ".join(missing) if missing else "无"
     return (
-        data.get("markerVersion") == MARKER_VERSION
-        and data.get("variant") == DEFAULT_VARIANT
-        and data.get("voice") == "alba"
+        f"18.2M 权重标记已在，这不等于 worker 已加载，也不等于推理成功。"
+        f"已准备音色 {len(prepared)}/{len(BUILTIN_VOICES)}：{prepared_text}。"
+        f"未准备：{missing_text}。"
+        f"已有 models/hf-home 会复用，不用重新登录或重下整模。执行 {PREPARE_COMMAND}。"
+        "页面点击不会下载。"
+    )
+
+
+def voice_gap(data: dict | None, voice: str) -> tuple[str, str] | None:
+    if not ready_is_current(data) or voice in prepared_voice_names(data):
+        return None
+    return (
+        "voices_incomplete",
+        f"{voice} 还没写入 english_18m_2026-10 的准备标记。{incomplete_reason(data)}",
     )
 
 

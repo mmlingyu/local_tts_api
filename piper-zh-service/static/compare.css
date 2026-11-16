@@ -50,6 +50,11 @@ button:disabled { opacity: 0.55; cursor: wait; }
   padding: 14px 16px;
   margin-top: 12px;
 }
+.pair { display: grid; gap: 12px; margin-top: 12px; }
+@media (min-width: 800px) {
+  .pair { grid-template-columns: 1fr 1fr; }
+}
+.pair .result { margin-top: 0; }
 .result h3 { margin: 0 0 6px; font-size: 18px; }
 .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 10px 0; }
 .metrics div { background: #f3f7fc; border-radius: 10px; padding: 8px 10px; }

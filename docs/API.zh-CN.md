@@ -25,7 +25,13 @@
 {"engine":"pocket","text":"Hello.","language":"en","voice":"alba","variant":"english_18m_2026-10"}
 ```
 
-`language` 是自然语言，当前只接受 `en` 或 `english`。`variant` 是模型 ID。省略 `variant` 时锁定 `english_18m_2026-10`（18.2M，含 decoder）。`english` 是上游约 100M 的默认模型，传它会返回 400，不会静默加载。`english_7m_2026-10`（6.9M）和 `english_2m_2026-10`（1.9M，实验档）官方有这个 ID，但本服务没有启用，也没有测过。`voice` 当前只接受内置名 `alba`。中文、日语、韩语返回 400，不会改用 Piper。虚拟环境没装、没有 `models/ready.json`，或标记不是 `english_18m_2026-10` 时，合成返回 HTTP 503，`code` 为 `model_not_ready`。`/api/health` 和 `/api/voices?engine=pocket` 使用同一个 `code`。这个状态不会下载权重。模型仍需先在 Hugging Face 接受许可。准备步骤见 `pocket-tts-service/README.zh-CN.md`。
+`language` 是自然语言，当前只接受 `en` 或 `english`。`variant` 是模型 ID。省略 `variant` 时锁定 `english_18m_2026-10`（18.2M，含 decoder）。`english` 是上游约 100M 的默认模型，传它会返回 400，不会静默加载。`english_7m_2026-10`（6.9M）和 `english_2m_2026-10`（1.9M，实验档）官方有这个 ID，但本服务没有启用，也没有测过。中文、日语、韩语、法语返回 400，不会改用 Piper，也不会把非英语文本交给英语模型。
+
+`voice` 接受 pocket-tts 4.0.1 为这个变体准备的全部 27 个内置名。来源是 `get_predefined_voice`（`pocket_tts/utils/utils.py`，tag `v4.0.1`），它固定请求 `kyutai/pocket-tts-without-voice-cloning` 的 `languages/english_18m_2026-10/embeddings/{name}.safetensors`，revision `a7056f505a4a8ca72d8b5fb1440071d6f1a35739`。该目录正好有这 27 个文件，与 `_ORIGINS_OF_PREDEFINED_VOICES` 的键一致，没有第 28 个，也没有缺文件。客户端仍不能传路径、URL 或 `hf://`。这 27 个名字是：alba、anna、azelma、bill_boerst、caro_davy、charles、cosette、daan、eponine、estelle、eve、fantine、george、giovanni、jane、javert、jean、juergen、lola、marius、mary、michael、paul、peter_yearsley、rafael、stuart_bell、vera。上游这个表没有性别字段，接口全部标为未知。
+
+`ready.json` 的 `markerVersion` 2 且 variant 为 `english_18m_2026-10`、voice 为 alba 时，表示 18.2M 权重标记已在、只确认了 alba。`markerVersion` 3 用 `voices` 列出已经准备的内置名。缺音色时合成返回 HTTP 503，`code` 为 `voices_incomplete`，不会在请求里下载。虚拟环境没装、没有标记，或 variant 不是这个 18.2M 时，`code` 为 `model_not_ready`。`prepared` / `modelReady` 只表示标记文件。`loaded` / `inferenceReady` 只在 worker 成功合成过且进程仍在时为 true；推理失败后两者回到 false，并带 `lastError`，不能把文件就绪说成推理就绪。准备步骤见 `pocket-tts-service/README.zh-CN.md`。已有 `models/hf-home` 会复用。
+
+对照页 `piper-compare.html` 在英语下可以同一段文本分别请求 Piper 和 Pocket，两张卡片各自播放和下载，并显示响应头里的引擎、模型、音色、整段耗时、音频时长和 RTF。整段耗时不是首音，也不是音质排名。语言不是英语时不向 Pocket 发请求。
 
 对照页的地址规则：
 

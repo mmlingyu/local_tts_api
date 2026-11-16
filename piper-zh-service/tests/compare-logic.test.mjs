@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { FIRST_AUDIO_NOTE, LEGACY_PIPER_MESSAGE, LOCAL_PIPER_8800, PRESETS, RTF_DEFINITION, isLoopbackHttp, kokoroAllowedFor, kokoroAvailableHere, parseWavPcm16, piperApiBase, piperSupportsLanguageFields, pocketRequest, presetsFor, rtf, ttsPayload } from "../static/compare-logic.mjs";
+import { FIRST_AUDIO_NOTE, LEGACY_PIPER_MESSAGE, LOCAL_PIPER_8800, POCKET_NON_ENGLISH, POCKET_VOICES, PRESETS, RTF_DEFINITION, isLoopbackHttp, kokoroAllowedFor, kokoroAvailableHere, parseWavPcm16, piperApiBase, piperSupportsLanguageFields, pocketCompareAllowed, pocketRequest, pocketVoiceError, presetsFor, rtf, ttsPayload } from "../static/compare-logic.mjs";
 
 test("RTF is full-utterance time divided by audio duration", () => {
   assert.equal(rtf(0.5, 2), 0.25);
@@ -54,6 +54,21 @@ test("old Piper is recognized and is not sent language fields", () => {
     voice: "alba",
     variant: "english_18m_2026-10",
   });
+  assert.equal(POCKET_VOICES.length, 27);
+  assert.equal(new Set(POCKET_VOICES).size, 27);
+  assert.equal(POCKET_VOICES.includes("alba"), true);
+  assert.equal(POCKET_VOICES.includes("daan"), true);
+  assert.equal(POCKET_VOICES.includes("estelle"), true);
+  assert.equal(pocketCompareAllowed("en"), true);
+  assert.equal(pocketCompareAllowed("zh"), false);
+  assert.equal(pocketCompareAllowed("fr"), false);
+  assert.equal(pocketRequest("银行行长到了重庆。", "zh", "alba", true), null);
+  assert.equal(pocketRequest("Bonjour.", "fr", "estelle", true), null);
+  assert.equal(pocketVoiceError("zh", "alba", true), POCKET_NON_ENGLISH);
+  assert.match(pocketVoiceError("en", "marius", false), /还没准备/);
+  assert.equal(pocketVoiceError("en", "alba", true), null);
+  assert.equal(pocketRequest("Hello.", "en", "marius", true).voice, "marius");
+  assert.equal(pocketRequest("Hello.", "en", "hf://kyutai/pocket-tts/x", true), null);
 });
 
 test("Kokoro stays on Chinese and other languages have their own lines", () => {

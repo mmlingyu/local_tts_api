@@ -9,7 +9,14 @@ import wave
 from io import BytesIO
 from pathlib import Path
 
-from pocket_local.catalog import DEFAULT_VARIANT, not_ready_reason, parse_pocket, ready_is_current
+from pocket_local.catalog import (
+    DEFAULT_VARIANT,
+    PocketRequestError,
+    not_ready_reason,
+    parse_pocket,
+    prepared_voice_names,
+    voice_gap,
+)
 
 
 def _pcm16(audio) -> tuple[bytes, int]:
@@ -43,6 +50,11 @@ def _ready_data() -> dict | None:
     return data if isinstance(data, dict) else {"variant": None}
 
 
+def _emit(body: dict) -> None:
+    sys.stdout.write(json.dumps(body) + "\n")
+    sys.stdout.flush()
+
+
 def main() -> int:
     model = None
     loaded = None
@@ -54,6 +66,10 @@ def main() -> int:
             continue
         try:
             message = json.loads(raw)
+        except json.JSONDecodeError:
+            _emit({"ok": False, "code": "bad_request", "error": "worker 收到的不是 JSON。"})
+            continue
+        try:
             text, language, voice, variant = parse_pocket(
                 {
                     "text": message.get("text", ""),
@@ -63,16 +79,22 @@ def main() -> int:
                     "engine": "pocket",
                 }
             )
-            if variant != DEFAULT_VARIANT:
-                raise RuntimeError("只加载 english_18m_2026-10。")
-            reason = not_ready_reason(True, _ready_data())
-            if reason:
-                body = {"ok": False, "code": "model_not_ready", "error": reason}
-                sys.stdout.write(json.dumps(body) + "\n")
-                sys.stdout.flush()
-                continue
-            if not ready_is_current(_ready_data()):
-                raise RuntimeError("准备标记校验失败。")
+        except PocketRequestError as exc:
+            _emit({"ok": False, "code": exc.code, "error": exc.message})
+            continue
+        if variant != DEFAULT_VARIANT:
+            _emit({"ok": False, "code": "worker_failed", "error": "只加载 english_18m_2026-10。"})
+            return 3
+        data = _ready_data()
+        reason = not_ready_reason(True, data)
+        if reason:
+            _emit({"ok": False, "code": "model_not_ready", "error": reason})
+            continue
+        if voice not in prepared_voice_names(data):
+            code, message = voice_gap(data, voice) or ("voices_incomplete", "音色未准备。")
+            _emit({"ok": False, "code": code, "error": message})
+            continue
+        try:
             from pocket_tts import TTSModel
 
             if model is None or loaded != variant:
@@ -88,19 +110,20 @@ def main() -> int:
             rate = int(model.sample_rate)
             if frames <= 0 or rate <= 0:
                 raise RuntimeError("Pocket 没有返回音频。")
-            body = {
-                "ok": True,
-                "wav_hex": _wav(pcm, rate).hex(),
-                "sample_rate": rate,
-                "frames": frames,
-                "voice": voice,
-                "language": language,
-                "variant": variant,
-            }
+            _emit(
+                {
+                    "ok": True,
+                    "wav_hex": _wav(pcm, rate).hex(),
+                    "sample_rate": rate,
+                    "frames": frames,
+                    "voice": voice,
+                    "language": language,
+                    "variant": variant,
+                }
+            )
         except Exception as exc:  # noqa: BLE001
-            body = {"ok": False, "error": str(exc)[:500]}
-        sys.stdout.write(json.dumps(body) + "\n")
-        sys.stdout.flush()
+            _emit({"ok": False, "code": "worker_failed", "error": str(exc)[:500]})
+            return 3
     return 0
 
 

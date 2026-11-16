@@ -343,6 +343,9 @@ def test_pocket_engine_is_opt_in_and_rejects_unsupported_languages(server):
     status, _headers, body = request(base, "/api/tts", {"engine": "pocket", "text": "你好。", "language": "zh"})
     assert status == 400
     assert json.loads(body)["code"] == "unsupported_language"
+    status, _headers, body = request(base, "/api/tts", {"engine": "pocket", "text": "Bonjour.", "language": "fr", "voice": "estelle"})
+    assert status == 400
+    assert json.loads(body)["code"] == "unsupported_language"
     status, _headers, body = request(base, "/api/tts", {"engine": "pocket", "text": "Hello.", "voice": "hf://kyutai/tts-voices/x.wav"})
     assert status == 400
     assert json.loads(body)["code"] == "unknown_voice"
@@ -409,6 +412,42 @@ def test_unprepared_pocket_is_503_through_the_real_worker(server):
         assert engine.calls == []
     finally:
         stale_bridge.close()
+
+    partial = Path("/tmp/pocket-partial-ready.json")
+    partial.write_text(
+        '{"markerVersion":2,"variant":"english_18m_2026-10","voice":"alba","sampleRate":24000}',
+        encoding="utf-8",
+    )
+    partial_bridge = PocketBridge(program=Path(sys.executable), ready_path=partial)
+    httpd.service_state.pocket = partial_bridge
+    try:
+        status, _headers, body = request(
+            base,
+            "/api/tts",
+            {"engine": "pocket", "text": "Hello.", "language": "en", "voice": "marius"},
+        )
+        assert status == 503
+        payload = json.loads(body)
+        assert payload["code"] == "voices_incomplete"
+        assert "marius" in payload["error"]
+        assert engine.calls == []
+        health = json.loads(request(base, "/api/health")[2])
+        pocket = health["engines"]["pocket"]
+        assert pocket["modelReady"] is True
+        assert pocket["prepared"] is True
+        assert pocket["voicesComplete"] is False
+        assert pocket["inferenceReady"] is False
+        assert pocket["loaded"] is False
+        assert "alba" in pocket["preparedVoices"]
+        voices = json.loads(request(base, "/api/voices?engine=pocket")[2])
+        assert len(voices["voices"]) == 27
+        by_name = {item["voice"]: item for item in voices["voices"]}
+        assert by_name["alba"]["prepared"] is True
+        assert by_name["marius"]["prepared"] is False
+        assert by_name["alba"]["gender"] == "unknown"
+        assert all(item["gender"] == "unknown" for item in voices["voices"])
+    finally:
+        partial_bridge.close()
 
 
 def test_voice_cache_drops_the_oldest_and_stays_serial():
