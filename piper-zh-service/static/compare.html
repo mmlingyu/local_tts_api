@@ -17,7 +17,7 @@
   <h2>服务状态</h2>
   <section class="health" id="health" aria-live="polite">
     <strong class="warn">正在读取 Piper 健康检查…</strong>
-    <span>只报告 127.0.0.1:8791 这个进程是否已加载模型，不探测这台电脑的 GPU 或内存。</span>
+    <span>只报告下方填写的本机 Piper 地址是否已加载模型，不探测这台电脑的 GPU 或内存。8791 若已被其他程序占用，请把 Piper 改到空闲端口。</span>
   </section>
 
   <h2>合成</h2>
@@ -41,7 +41,11 @@
     <input id="kokoro-optin" type="checkbox">
     我确认现在加载 Kokoro。若浏览器没有缓存，Transformers.js 会访问 Hugging Face 下载 ONNX；这一步不会下载 Piper 模型。未勾选时点击 Kokoro 只会提示，不会发请求。
   </label>
-  <p class="note" id="kokoro-where">Kokoro 只能在中文页所在的 http://127.0.0.1:8787/piper-compare.html 里跑，因为它依赖那个页面的跨源隔离和本地 ORT。从 8791 打开本页时只能测 Piper。</p>
+  <label for="piper-base">Piper 地址（只接受本机 http）
+    <input id="piper-base" type="text" value="http://127.0.0.1:8791" spellcheck="false" size="36">
+  </label>
+  <button type="button" id="piper-base-save">使用这个 Piper 地址</button>
+  <p class="note" id="kokoro-where">Kokoro 只能在中文页所在的 http://127.0.0.1:8787/piper-compare.html 里跑，因为它依赖那个页面的跨源隔离和本地 ORT。从 Piper 自己的端口打开本页时只能测 Piper。</p>
 
   <label for="text">文本</label>
   <textarea id="text">银行行长到了重庆。</textarea>

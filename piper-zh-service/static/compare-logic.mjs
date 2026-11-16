@@ -203,3 +203,30 @@ export function kokoroAvailableHere(locationLike) {
   const host = locationLike.hostname;
   return (host === "127.0.0.1" || host === "localhost") && port === "8787";
 }
+
+export function isLoopbackHttp(value) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "http:") return false;
+  if (url.hostname !== "127.0.0.1" && url.hostname !== "localhost") return false;
+  if (url.username || url.password || url.search || url.hash) return false;
+  if (url.pathname !== "/" && url.pathname !== "") return false;
+  const port = Number(url.port);
+  return Number.isInteger(port) && port >= 1 && port <= 65535;
+}
+
+export function piperApiBase(locationLike, stored) {
+  const saved = String(stored || "").trim().replace(/\/$/, "");
+  if (isLoopbackHttp(saved)) return saved;
+  const host = locationLike && locationLike.hostname;
+  const port = locationLike && String(locationLike.port || "");
+  if ((host === "127.0.0.1" || host === "localhost") && port && port !== "8787") {
+    const protocol = locationLike.protocol || "http:";
+    return `${protocol}//${host}:${port}`;
+  }
+  return "http://127.0.0.1:8791";
+}

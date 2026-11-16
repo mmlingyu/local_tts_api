@@ -2,12 +2,12 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 node sync-compare.cjs
-if [[ ! -d node_modules/@uzen/kokoro-js ]]; then
-  echo "请先在 zh-web-service 执行 npm install" >&2
-  exit 1
-fi
 if [[ ! -f public/app.js || ! -f public/kokoro-client.js ]]; then
-  node build.cjs
+  if [[ -d node_modules/@uzen/kokoro-js ]]; then
+    node build.cjs
+  else
+    echo "尚未构建 Kokoro。对照页仍可启动。需要 Kokoro 时再执行 npm ci 和 node build.cjs。" >&2
+  fi
 fi
 export PORT="${PORT:-8787}"
 if [[ -f service-state.json ]]; then
@@ -17,7 +17,13 @@ if [[ -f service-state.json ]]; then
     sleep 0.4
   fi
 fi
-if command -v ss >/dev/null && ss -ltn | grep -q ":${PORT} "; then
+if ! python3 -c 'import socket,sys; s=socket.socket();
+try:
+    s.bind(("127.0.0.1", int(sys.argv[1])))
+except OSError:
+    sys.exit(1)
+finally:
+    s.close()' "$PORT"; then
   echo "端口 ${PORT} 仍被占用，没有改到别的端口。请先停掉旧的 node server.cjs。" >&2
   exit 1
 fi

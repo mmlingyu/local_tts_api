@@ -1,4 +1,4 @@
-param([int]$Port=8787)
+﻿param([int]$Port=8787)
 $ErrorActionPreference='Stop'
 $root=$PSScriptRoot
 Set-Location $root
@@ -17,7 +17,7 @@ if(Test-Path "$root\service-state.json"){
     Start-Sleep -Milliseconds 400
   }
 }
-if(!(Test-Path "$root\public\app.js")){& node "$root\build.cjs";if($LASTEXITCODE -ne 0){throw 'Build failed'}}
+if(!(Test-Path "$root\public\app.js")){Write-Output "public\app.js is missing. The compare page can still start. Kokoro needs: npm ci; node build.cjs"}
 $busy=Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
 if($busy){
   Write-Output "端口 $Port 仍被占用，所以 http://127.0.0.1:$Port/piper-compare.html 可能仍是旧进程返回的 404。没有改到别的端口。"

@@ -107,6 +107,15 @@ def request(base: str, path: str, payload: dict | None = None, method: str | Non
         return exc.code, dict(exc.headers), exc.read()
 
 
+def test_cors_keeps_8787_when_piper_uses_another_port():
+    from piper_zh.server import ServiceState
+
+    state = ServiceState(FakeEngine(), 8800)
+    assert "http://127.0.0.1:8787" in state.origins()
+    assert "http://127.0.0.1:8800" in state.origins()
+    assert "http://example.com:8800" not in state.origins()
+
+
 def test_health_and_page(server):
     _httpd, _engine, base = server
     status, _headers, body = request(base, "/api/health")

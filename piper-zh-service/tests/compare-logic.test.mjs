@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { FIRST_AUDIO_NOTE, PRESETS, RTF_DEFINITION, kokoroAvailableHere, parseWavPcm16, rtf } from "../static/compare-logic.mjs";
+import { FIRST_AUDIO_NOTE, PRESETS, RTF_DEFINITION, isLoopbackHttp, kokoroAvailableHere, parseWavPcm16, piperApiBase, rtf } from "../static/compare-logic.mjs";
 
 test("RTF is full-utterance time divided by audio duration", () => {
   assert.equal(rtf(0.5, 2), 0.25);
@@ -18,6 +18,16 @@ test("presets cover the required Chinese cases and stay within the server limit"
   }
   assert.ok(PRESETS.every((item) => item.text.length > 0 && item.text.length <= 2000));
   assert.equal(new Set(PRESETS.map((item) => item.id)).size, PRESETS.length);
+});
+
+test("Piper endpoint stays on loopback and can leave 8791", () => {
+  assert.equal(isLoopbackHttp("http://127.0.0.1:8800"), true);
+  assert.equal(isLoopbackHttp("http://127.0.0.1:8791"), true);
+  assert.equal(isLoopbackHttp("https://127.0.0.1:8800"), false);
+  assert.equal(isLoopbackHttp("http://example.com:8800"), false);
+  assert.equal(piperApiBase({ hostname: "127.0.0.1", port: "8787", protocol: "http:" }, ""), "http://127.0.0.1:8791");
+  assert.equal(piperApiBase({ hostname: "127.0.0.1", port: "8787", protocol: "http:" }, "http://127.0.0.1:8800"), "http://127.0.0.1:8800");
+  assert.equal(piperApiBase({ hostname: "127.0.0.1", port: "8800", protocol: "http:" }, "http://evil.example:8800"), "http://127.0.0.1:8800");
 });
 
 test("Kokoro is only offered on the existing Chinese page origin", () => {

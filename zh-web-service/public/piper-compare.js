@@ -4,17 +4,30 @@ import {
   RTF_DEFINITION,
   categories,
   formatSeconds,
+  isLoopbackHttp,
   kokoroAvailableHere,
   parseWavPcm16,
+  piperApiBase,
   rtf,
 } from "./piper-compare-logic.mjs";
 
 const $ = (id) => document.getElementById(id);
-const PIPER_API = "http://127.0.0.1:8791";
+let piperApi = piperApiBase(location, window.localStorage.getItem("piperApiBase"));
 let stopRequested = false;
 let running = false;
 let kokoroModule = null;
 
+$("piper-base").value = piperApi;
+$("piper-base-save").addEventListener("click", () => {
+  const next = $("piper-base").value.trim();
+  if (!isLoopbackHttp(next)) {
+    $("health").textContent = "Piper 地址只能是 http://127.0.0.1:端口 或 http://localhost:端口。不会改用 8791 以外的任意网站。";
+    return;
+  }
+  piperApi = next.replace(/\/$/, "");
+  window.localStorage.setItem("piperApiBase", piperApi);
+  refreshHealth();
+});
 $("rtf-definition").textContent = RTF_DEFINITION;
 if (!kokoroAvailableHere(location)) {
   $("kokoro-where").textContent =
@@ -47,7 +60,7 @@ function setBusy(value) {
 async function refreshHealth() {
   const box = $("health");
   try {
-    const response = await fetch(`${PIPER_API}/api/health`, { cache: "no-store" });
+    const response = await fetch(`${piperApi}/api/health`, { cache: "no-store" });
     const data = await response.json();
     const ready = data.modelReady === true;
     const title = document.createElement("strong");
@@ -72,7 +85,7 @@ async function refreshHealth() {
     title.className = "bad";
     title.textContent = "Piper 服务没有响应";
     const detail = document.createElement("span");
-    detail.textContent = `请先在 piper-zh-service 启动 python -m piper_zh。这只说明 127.0.0.1:8791 连不上，不是电脑硬件检测。${error.message || ""}`;
+    detail.textContent = `请先启动 Piper：python -m piper_zh --host 127.0.0.1 --port <空闲端口> --device cpu。这只说明 ${piperApi} 连不上，不是电脑硬件检测。${error.message || ""}`;
     box.replaceChildren(title, detail);
   }
 }
@@ -166,7 +179,7 @@ function renderResult(record) {
 
 async function runPiper(text) {
   const started = performance.now();
-  const response = await fetch(`${PIPER_API}/api/tts`, {
+  const response = await fetch(`${piperApi}/api/tts`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text }),
