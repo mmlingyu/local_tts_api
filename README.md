@@ -12,6 +12,7 @@
 - [`zh-web-service/README.zh-CN.md`](zh-web-service/README.zh-CN.md)
 - [`phonon/README.zh-CN.md`](phonon/README.zh-CN.md)
 - [`piper-zh-service/README.zh-CN.md`](piper-zh-service/README.zh-CN.md)
+- [`docs/API.zh-CN.md`](docs/API.zh-CN.md)
 
 如果这两份说明与本文件冲突，以「模型未入库、新机器不能直接运行」这条边界为准。
 
