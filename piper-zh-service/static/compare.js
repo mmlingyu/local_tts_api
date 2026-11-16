@@ -11,14 +11,19 @@ import {
   rtf,
 } from "./piper-compare-logic.mjs";
 
+const GENDER_LABEL = { female: "女", male: "男", unknown: "性别未知", multiple: "男女声在同一模型" };
 const FALLBACK_VOICES = [
-  { voice: "zh_CN-chaowen-medium", language: "zh", numSpeakers: 1, speakers: {}, defaultForLanguage: true, datasetLicense: "CC0", downloaded: false, loaded: false, frontendReady: false, pronunciationReviewed: false },
-  { voice: "en_US-joe-medium", language: "en", numSpeakers: 1, speakers: {}, defaultForLanguage: true, datasetLicense: "CC0", downloaded: false, loaded: false, frontendReady: false, pronunciationReviewed: false },
-  { voice: "ja_JP-hi_fi_captain-medium", language: "ja", numSpeakers: 2, speakers: { female: 0, male: 1 }, defaultForLanguage: true, datasetLicense: "CC BY-NC-SA 4.0", downloaded: false, loaded: false, frontendReady: false, pronunciationReviewed: false },
-  { voice: "ko_KR-kss-medium", language: "ko", numSpeakers: 1, speakers: {}, defaultForLanguage: true, datasetLicense: "CC BY-NC-SA 4.0", downloaded: false, loaded: false, frontendReady: false, pronunciationReviewed: false },
-  { voice: "fr_FR-siwis-medium", language: "fr", numSpeakers: 1, speakers: {}, defaultForLanguage: true, datasetLicense: "CC BY 4.0", downloaded: false, loaded: false, frontendReady: false, pronunciationReviewed: false },
+  { voice: "zh_CN-chaowen-medium", language: "zh", numSpeakers: 1, speakers: {}, gender: "unknown", licenseClass: "attribution", datasetLicense: "CC0", defaultForLanguage: true, downloaded: false, loaded: false, frontendReady: false, pronunciationReviewed: false },
+  { voice: "zh_CN-xiao_ya-medium", language: "zh", numSpeakers: 1, speakers: {}, gender: "female", licenseClass: "noncommercial", datasetLicense: "Non-commercial", defaultForLanguage: false, downloaded: false, loaded: false, frontendReady: false, pronunciationReviewed: false },
+  { voice: "en_US-joe-medium", language: "en", numSpeakers: 1, speakers: {}, gender: "unknown", licenseClass: "permissive", datasetLicense: "CC0", defaultForLanguage: true, downloaded: false, loaded: false, frontendReady: false, pronunciationReviewed: false },
+  { voice: "en_US-ljspeech-medium", language: "en", numSpeakers: 1, speakers: {}, gender: "female", licenseClass: "permissive", datasetLicense: "public domain", defaultForLanguage: false, downloaded: false, loaded: false, frontendReady: false, pronunciationReviewed: false },
+  { voice: "en_US-norman-medium", language: "en", numSpeakers: 1, speakers: {}, gender: "male", licenseClass: "permissive", datasetLicense: "public domain", defaultForLanguage: false, downloaded: false, loaded: false, frontendReady: false, pronunciationReviewed: false },
+  { voice: "ja_JP-hi_fi_captain-medium", language: "ja", numSpeakers: 2, speakers: { female: 0, male: 1 }, speakerGenders: { female: "female", male: "male" }, gender: "multiple", licenseClass: "noncommercial", datasetLicense: "CC BY-NC-SA 4.0", defaultForLanguage: true, downloaded: false, loaded: false, frontendReady: false, pronunciationReviewed: false },
+  { voice: "ko_KR-kss-medium", language: "ko", numSpeakers: 1, speakers: {}, gender: "female", licenseClass: "noncommercial", datasetLicense: "CC BY-NC-SA 4.0", defaultForLanguage: true, downloaded: false, loaded: false, frontendReady: false, pronunciationReviewed: false },
+  { voice: "fr_FR-siwis-medium", language: "fr", numSpeakers: 1, speakers: {}, gender: "unknown", licenseClass: "attribution", datasetLicense: "CC BY 4.0", defaultForLanguage: true, downloaded: false, loaded: false, frontendReady: false, pronunciationReviewed: false },
 ];
 let voiceCatalog = FALLBACK_VOICES;
+let languageCatalog = [];
 
 const $ = (id) => document.getElementById(id);
 let piperApi = piperApiBase(location, window.localStorage.getItem("piperApiBase"));
@@ -70,7 +75,8 @@ function renderVoiceChoices() {
       voice.frontendReady ? "前端就绪" : "前端未就绪",
       voice.pronunciationReviewed ? "已听审" : "未做人工听审",
     ];
-    option.textContent = `${voice.voice} · ${voice.datasetLicense || ""} · ${flags.join(" / ")}`;
+    const gender = GENDER_LABEL[voice.gender] || "性别未知";
+    option.textContent = `${voice.voice} · ${gender} · ${voice.datasetLicense || ""} · ${voice.licenseClass || ""} · ${flags.join(" / ")}`;
     select.append(option);
   }
   if (voices.some((item) => item.voice === previous)) select.value = previous;
@@ -360,11 +366,27 @@ async function refreshVoices() {
     const response = await fetch(`${piperApi}/api/voices`, { cache: "no-store" });
     const data = await response.json();
     if (Array.isArray(data.voices) && data.voices.length) voiceCatalog = data.voices;
+    if (Array.isArray(data.languages)) languageCatalog = data.languages;
   } catch {
     voiceCatalog = FALLBACK_VOICES;
   }
   renderVoiceChoices();
   renderPresets();
+  updateGenderCoverage();
+}
+
+function updateGenderCoverage() {
+  const coverage = $("gender-coverage");
+  if (coverage) {
+    const row = languageCatalog.find((item) => item.language === currentLanguage());
+    if (!row) {
+      coverage.textContent = "还没有读到性别覆盖。gender 不是请求字段，只能在上面的音色列表里选择。";
+    } else {
+      const verified = (row.verifiedGenders || []).map((item) => GENDER_LABEL[item] || item).join("、") || "无";
+      const missing = (row.missingGenders || []).map((item) => GENDER_LABEL[item] || item).join("、") || "无";
+      coverage.textContent = `已核实：${verified}。仍缺：${missing}。${row.gap || ""} 自动合成不代表听感正确。`;
+    }
+  }
 }
 
 async function runAll() {
@@ -391,6 +413,7 @@ $("stop").addEventListener("click", () => {
 $("piper-language").addEventListener("change", () => {
   renderVoiceChoices();
   renderPresets();
+  updateGenderCoverage();
   const first = presetsFor(currentLanguage())[0];
   if (first) $("text").value = first.text;
 });

@@ -4,8 +4,11 @@
 
 Piper 白名单目前有五种官方音色，一次请求只用其中一个：
 
-- `zh_CN-chaowen-medium`：拼音，g2pW。只发 `{"text":"..."}` 时仍是它。
-- `en_US-joe-medium`：espeak。训练链是 CC0 的 rdh，不是 lessac。
+- `zh_CN-chaowen-medium`：拼音，g2pW。只发 `{"text":"..."}` 时仍是它。模型卡没写性别。
+- `zh_CN-xiao_ya-medium`：拼音，g2pW。标贝数据写明女声，非商用，不是默认。
+- `en_US-joe-medium`：espeak。训练链是 CC0 的 rdh，不是 lessac。模型卡没写性别，仍是英语默认。
+- `en_US-ljspeech-medium`：模型卡写明美国英语女声，公有领域。
+- `en_US-norman-medium`：模型卡写明美国英语男声，公有领域。
 - `fr_FR-siwis-medium`：espeak。CC BY 4.0，并带 Hi-Fi TTS 署名要求。
 - `ja_JP-hi_fi_captain-medium`：OpenJTalk。CC BY-NC-SA 4.0。`VOICES.md` 的语言列表没写日语，`voices.json` 有这一条。
 - `ko_KR-kss-medium`：espeak `ko`。CC BY-NC-SA 4.0。同样不在 `VOICES.md` 的语言列表里，但在索引里。

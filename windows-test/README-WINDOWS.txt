@@ -80,6 +80,9 @@ optional and each command fetches one voice:
     .\.venv\Scripts\python.exe -m piper_zh.download --confirm --language ja
     .\.venv\Scripts\python.exe -m piper_zh.download --confirm --language ko
     .\.venv\Scripts\python.exe -m piper_zh.download --confirm --language fr
+    .\.venv\Scripts\python.exe -m piper_zh.download --confirm --voice zh_CN-xiao_ya-medium
+    .\.venv\Scripts\python.exe -m piper_zh.download --confirm --voice en_US-ljspeech-medium
+    .\.venv\Scripts\python.exe -m piper_zh.download --confirm --voice en_US-norman-medium
 
 Without the downloaded model, Piper still starts and /api/health says the model
 is not ready. It does not download weights during a page click.

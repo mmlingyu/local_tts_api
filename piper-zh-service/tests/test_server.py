@@ -263,6 +263,43 @@ def test_whitelist_rejects_unknown_voice_mismatch_and_paths(server):
     assert engine.calls.count("こんにちは。") == 1
 
 
+def test_gender_is_metadata_not_a_request_field(server):
+    from piper_zh.catalog import BY_ID, language_rows
+
+    rows = {item["language"]: item for item in language_rows()}
+    assert rows["zh"]["verifiedGenders"] == ["female"]
+    assert rows["zh"]["missingGenders"] == ["male"]
+    assert rows["zh"]["defaultVoice"] == "zh_CN-chaowen-medium"
+    assert BY_ID["zh_CN-chaowen-medium"].gender == "unknown"
+    assert BY_ID["zh_CN-xiao_ya-medium"].gender == "female"
+    assert BY_ID["zh_CN-xiao_ya-medium"].phoneme_type == "pinyin"
+    assert BY_ID["zh_CN-xiao_ya-medium"].license_class == "noncommercial"
+    assert rows["en"]["verifiedGenders"] == ["female", "male"]
+    assert rows["en"]["missingGenders"] == []
+    assert rows["en"]["defaultVoice"] == "en_US-joe-medium"
+    assert BY_ID["en_US-joe-medium"].gender == "unknown"
+    assert BY_ID["en_US-ljspeech-medium"].gender == "female"
+    assert BY_ID["en_US-norman-medium"].gender == "male"
+    assert rows["ja"]["verifiedGenders"] == ["female", "male"]
+    assert BY_ID["ja_JP-hi_fi_captain-medium"].speakers == {"female": 0, "male": 1}
+    assert rows["ko"]["verifiedGenders"] == ["female"]
+    assert rows["ko"]["missingGenders"] == ["male"]
+    assert "不能用变调" in rows["ko"]["gap"]
+    _httpd, engine, base = server
+    status, _headers, body = request(base, "/api/tts", {"text": "Hello.", "language": "en", "gender": "female"})
+    assert status == 400
+    assert json.loads(body)["code"] == "bad_request"
+    assert engine.calls == []
+    status, _headers, body = request(base, "/api/voices")
+    payload = json.loads(body)
+    ko = next(item for item in payload["languages"] if item["language"] == "ko")
+    assert ko["missingGenders"] == ["male"]
+    zh = next(item for item in payload["voices"] if item["voice"] == "zh_CN-xiao_ya-medium")
+    assert zh["gender"] == "female"
+    assert zh["licenseClass"] == "noncommercial"
+    assert "url" not in zh
+
+
 def test_voice_cache_drops_the_oldest_and_stays_serial():
     from piper_zh.catalog import BY_ID
     from piper_zh.engine import Synthesis, VoicePool

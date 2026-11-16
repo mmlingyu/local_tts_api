@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 SERVICE_DIR = Path(__file__).resolve().parents[1]
@@ -67,6 +67,10 @@ class VoiceSpec:
     documented_in_voices_md: bool
     is_default: bool
     legacy_flat: bool = False
+    gender: str = "unknown"
+    gender_source: str = ""
+    speaker_genders: dict[str, str] = field(default_factory=dict)
+    license_class: str = "unknown"
 
     @property
     def directory(self) -> Path:
@@ -149,6 +153,37 @@ VOICES: tuple[VoiceSpec, ...] = (
         documented_in_voices_md=True,
         is_default=True,
         legacy_flat=True,
+        gender="unknown",
+        gender_source="https://huggingface.co/rhasspy/piper-voices/blob/main/zh/zh_CN/chaowen/medium/MODEL_CARD",
+        license_class="attribution",
+    ),
+    VoiceSpec(
+        voice_id="zh_CN-xiao_ya-medium",
+        language="zh",
+        locale="zh_CN",
+        name="xiao_ya",
+        quality="medium",
+        phoneme_type="pinyin",
+        espeak_voice=None,
+        sample_rate=22050,
+        num_speakers=1,
+        speakers={},
+        default_speaker_id=0,
+        onnx_size=63_221_984,
+        onnx_md5="b1cece47c5d601a8f6b63b8da82b484a",
+        config_size=2927,
+        config_md5="6018be9c632a62548fea129a42a4610a",
+        card_size=434,
+        card_md5="d5fc6eab8567db163e9cff56ed53f387",
+        dataset_license="Non-commercial",
+        dataset_url="https://www.data-baker.com/data/index/TNtts/",
+        training="Trained from scratch. phoneme_type is pinyin, so synthesis uses g2pW and not espeak.",
+        commercial_note="标贝中文标准女声音库只允许非商用。不是默认音色，也不能当成可商用女声。这不是法律意见。",
+        documented_in_voices_md=True,
+        is_default=False,
+        gender="female",
+        gender_source="https://www.data-baker.com/data/index/TNtts/",
+        license_class="noncommercial",
     ),
     VoiceSpec(
         voice_id="en_US-joe-medium",
@@ -174,6 +209,65 @@ VOICES: tuple[VoiceSpec, ...] = (
         commercial_note="官方商用清单把整条训练链记为 CC0。这不是法律意见，也不覆盖 Piper 引擎的 GPL。",
         documented_in_voices_md=True,
         is_default=True,
+        gender="unknown",
+        gender_source="https://huggingface.co/rhasspy/piper-voices/blob/main/en/en_US/joe/medium/MODEL_CARD",
+        license_class="permissive",
+    ),
+    VoiceSpec(
+        voice_id="en_US-ljspeech-medium",
+        language="en",
+        locale="en_US",
+        name="ljspeech",
+        quality="medium",
+        phoneme_type="espeak",
+        espeak_voice="en",
+        sample_rate=22050,
+        num_speakers=1,
+        speakers={},
+        default_speaker_id=0,
+        onnx_size=63_531_379,
+        onnx_md5="109d552e9dd78d92d1169a7edd6de38d",
+        config_size=4972,
+        config_md5="0668112b8b3ac5bb4b12c2b1a366776a",
+        card_size=517,
+        card_md5="5ad31d314786587d4f97effb0b716d61",
+        dataset_license="public domain",
+        dataset_url="https://keithito.com/LJ-Speech-Dataset/",
+        training="Trained from scratch. The model card says: US English female voice.",
+        commercial_note="公有领域，从零训练。模型卡写明是美国英语女声。这不是法律意见。",
+        documented_in_voices_md=True,
+        is_default=False,
+        gender="female",
+        gender_source="https://huggingface.co/rhasspy/piper-voices/blob/main/en/en_US/ljspeech/medium/MODEL_CARD",
+        license_class="permissive",
+    ),
+    VoiceSpec(
+        voice_id="en_US-norman-medium",
+        language="en",
+        locale="en_US",
+        name="norman",
+        quality="medium",
+        phoneme_type="espeak",
+        espeak_voice="en",
+        sample_rate=22050,
+        num_speakers=1,
+        speakers={},
+        default_speaker_id=0,
+        onnx_size=63_531_379,
+        onnx_md5="829cea515dc724d694b83b71e8083f9f",
+        config_size=4968,
+        config_md5="975830d6f230f6eccf657d265de99eba",
+        card_size=528,
+        card_md5="c34f20bbc4918681ad7a070a8321f2fa",
+        dataset_license="public domain",
+        dataset_url="https://librivox.org",
+        training="Trained from scratch. The model card says: US English male voice.",
+        commercial_note="公有领域，从零训练。模型卡写明是美国英语男声。这不是法律意见。",
+        documented_in_voices_md=True,
+        is_default=False,
+        gender="male",
+        gender_source="https://huggingface.co/rhasspy/piper-voices/blob/main/en/en_US/norman/medium/MODEL_CARD",
+        license_class="permissive",
     ),
     VoiceSpec(
         voice_id="fr_FR-siwis-medium",
@@ -224,6 +318,10 @@ VOICES: tuple[VoiceSpec, ...] = (
         commercial_note="数据集是非商用的 CC BY-NC-SA 4.0。VOICES.md 的语言列表没有写日语，但 voices.json 有这一条。这不是法律意见。",
         documented_in_voices_md=False,
         is_default=True,
+        gender="multiple",
+        gender_source="https://huggingface.co/rhasspy/piper-voices/resolve/main/ja/ja_JP/hi_fi_captain/medium/ja_JP-hi_fi_captain-medium.onnx.json",
+        speaker_genders={"female": "female", "male": "male"},
+        license_class="noncommercial",
     ),
     VoiceSpec(
         voice_id="ko_KR-kss-medium",
@@ -249,8 +347,20 @@ VOICES: tuple[VoiceSpec, ...] = (
         commercial_note="数据集是非商用的 CC BY-NC-SA 4.0。VOICES.md 的语言列表没有写韩语，但 voices.json 有这一条。这不是法律意见。",
         documented_in_voices_md=False,
         is_default=True,
+        gender="female",
+        gender_source="https://www.kaggle.com/datasets/bryanpark/korean-single-speaker-speech-dataset",
+        license_class="noncommercial",
     ),
 )
+
+# Official index has no verified voice for these cells. Do not invent one.
+GENDER_GAPS = {
+    "zh": "没有官方中文模型写明男声。超文的模型卡和 voice-datasets 都没写性别。华严许可证未知，而且音素是 espeak，没有把它当成已核实男声。",
+    "en": "",
+    "ja": "",
+    "ko": "voices.json 只有 ko_KR-kss-medium。没有官方韩语男声或多说话人模型。不能用变调、别的语言或新训练来冒充。",
+    "fr": "这轮不补法语性别。siwis 的模型卡没有写性别。",
+}
 
 BY_ID = {item.voice_id: item for item in VOICES}
 DEFAULT_BY_LANGUAGE = {item.language: item for item in VOICES if item.is_default}
@@ -340,6 +450,10 @@ def inventory(loaded_ids: set[str] | None = None, verified_ids: set[str] | None 
                 "synthesisVerifiedThisProcess": spec.voice_id in verified_ids,
                 "pronunciationReviewed": False,
                 "onnxBytes": spec.onnx_size,
+                "gender": spec.gender,
+                "genderSource": spec.gender_source,
+                "speakerGenders": spec.speaker_genders,
+                "licenseClass": spec.license_class,
             }
         )
     return rows
@@ -350,13 +464,22 @@ def language_rows(loaded_ids: set[str] | None = None, verified_ids: set[str] | N
     rows = []
     for language in ("zh", "en", "ja", "ko", "fr"):
         owned = [item for item in voices if item["language"] == language]
+        present = set()
+        for item in owned:
+            if item["speakerGenders"]:
+                present.update(item["speakerGenders"].values())
+            elif item["gender"] in {"female", "male"}:
+                present.add(item["gender"])
+        missing = [name for name in ("female", "male") if name not in present]
         rows.append(
             {
                 "language": language,
                 "locale": owned[0]["locale"],
                 "officialVoiceCount": len(owned),
                 "supported": bool(owned),
-                "gap": None if owned else "voices.json 没有这个语言的官方音色。",
+                "gap": GENDER_GAPS.get(language) or None,
+                "verifiedGenders": sorted(present),
+                "missingGenders": missing,
                 "voices": [item["voice"] for item in owned],
                 "defaultVoice": next(item["voice"] for item in owned if item["defaultForLanguage"]),
                 "anyDownloaded": any(item["downloaded"] for item in owned),
@@ -370,7 +493,7 @@ def language_rows(loaded_ids: set[str] | None = None, verified_ids: set[str] | N
 def parse_tts_fields(payload: dict) -> tuple[str, str, str, int | None]:
     if not isinstance(payload, dict) or "text" not in payload or not set(payload) <= {"text", "language", "voice", "speaker"}:
         raise RequestError(
-            '只接受 {"text": "..."}，可选 language、voice、speaker。不能通过请求指定模型、路径、地址或命令。',
+            '只接受 {"text": "..."}，可选 language、voice、speaker。不能传 gender，也不能指定模型、路径、地址或命令。',
             400,
             "bad_request",
         )

@@ -165,7 +165,37 @@ python -m piper_zh.download --list
 | ja | `ja_JP-hi_fi_captain-medium` | japanese，OpenJTalk。两个说话人 | 76753841 | 数据集 CC BY-NC-SA 4.0，非商用；模型卡写明从 LibriTTS-R 微调 | 列表里没有日语，索引里有这一条 |
 | ko | `ko_KR-kss-medium` | espeak `ko` | 63221984 | 数据集 CC BY-NC-SA 4.0，非商用；模型卡写明从 LibriTTS-R 微调 | 列表里没有韩语，索引里有这一条 |
 
-没有把 lessac、huayan、xiao_ya 放进白名单。官方索引里还有很多英语和法语音色，本服务不接受它们的 id。
+没有把 lessac 或 huayan 放进白名单。`gender` 不是请求字段。`GET /api/voices` 会给出每个音色的 `gender`、`genderSource`、`licenseClass` 和语言级的 `missingGenders`。
+
+### 中英日韩男女声
+
+性别只采用模型卡、模型配置或数据集作者的原文。名字本身不算证据。
+
+| 语言 | 女 | 男 | 状态 |
+| --- | --- | --- | --- |
+| zh | `zh_CN-xiao_ya-medium`。标贝页面写明「中文标准女声音库」「发音人：女」。拼音，g2pW。非商用，不是默认 | 官方索引里没有写明男声的模型。`zh_CN-chaowen-medium` 仍是默认，模型卡没写性别，标为未知 | 女声已补上。男声仍缺 |
+| en | `en_US-ljspeech-medium`。模型卡写 “US English female voice”，公有领域，从零训练 | `en_US-norman-medium`。模型卡写 “US English male voice”，公有领域，从零训练 | 两者都已加入。`en_US-joe-medium` 仍是不带 voice 时的默认，性别未知 |
+| ja | 同一模型 `speaker` 为 `female` 或 `0` | 同一模型 `speaker` 为 `male` 或 `1`。来源是官方 `onnx.json` 的 `speaker_id_map` | 已具备，不用再下载第二个模型 |
+| ko | `ko_KR-kss-medium`。数据集作者写 “professional female voice actoress” | `voices.json` 没有第二份韩语模型 | 女声已核实。男声仍缺，不能用变调或其他语言冒充 |
+
+显式下载，一次一个：
+
+```bash
+python -m piper_zh.download --confirm --voice zh_CN-xiao_ya-medium
+python -m piper_zh.download --confirm --voice en_US-ljspeech-medium
+python -m piper_zh.download --confirm --voice en_US-norman-medium
+```
+
+英语女声示例仍用 UTF-8 文件：
+
+```powershell
+$json = '{"text":"Hello.","voice":"en_US-ljspeech-medium"}'
+$utf8 = New-Object System.Text.UTF8Encoding $false
+[System.IO.File]::WriteAllText("$pwd\piper-female.json", $json, $utf8)
+curl.exe -sS -o piper-female.wav -H "Content-Type: application/json" --data-binary "@piper-female.json" http://127.0.0.1:8800/api/tts
+```
+
+日语男声把 `speaker` 写成 `"male"`。韩语没有对应的男声请求。Kokoro 页面本身有中文女声 `zf_001`、`zf_002` 和男声 `zm_009`、`zm_010`，英文 `af_maple` 在库里标为 Female，没有随这页提供的英文男声。Phonon 清单里美式和英式都有标注过的男女声，`default` 的 gender 是空。这些不是 Piper 白名单。
 
 ## Phonon 合成
 
