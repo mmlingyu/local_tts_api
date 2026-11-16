@@ -4,7 +4,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
 <title>Piper 与 Kokoro 对照测试</title>
-<link rel="stylesheet" href="/piper-compare.css">
+<link rel="stylesheet" href="/piper-compare.css?v=20261116b">
 <main>
   <h1>Piper 与 Kokoro 对照测试</h1>
   <p class="lede">默认中文合成仍是 8787 上的 Kokoro。Piper 是可选的本机服务，白名单里有中文、英语、日语、韩语和法语。点击不会下载模型。Phonon 的英文页面保持原样，不在这里被替换。</p>
@@ -17,8 +17,9 @@
   <h2>服务状态</h2>
   <section class="health" id="health" aria-live="polite">
     <strong class="warn">正在读取 Piper 健康检查…</strong>
-    <span>只报告下方填写的本机 Piper 地址是否已加载模型，不探测这台电脑的 GPU 或内存。8791 若已被其他程序占用，请把 Piper 改到空闲端口。</span>
+    <span>只报告下方填写的本机 Piper 地址是否已加载模型，不探测这台电脑的 GPU 或内存，也不会扫描其他端口。</span>
   </section>
+  <p class="note" id="piper-endpoint">正在确认 Piper 地址和版本。</p>
 
   <h2>合成</h2>
   <div class="row">
@@ -56,10 +57,11 @@
     <input id="kokoro-optin" type="checkbox">
     我确认现在加载 Kokoro。若浏览器没有缓存，Transformers.js 会访问 Hugging Face 下载 ONNX；这一步不会下载 Piper 模型。未勾选时点击 Kokoro 只会提示，不会发请求。
   </label>
-  <label for="piper-base">Piper 地址（只接受本机 http）
-    <input id="piper-base" type="text" value="http://127.0.0.1:8791" spellcheck="false" size="36">
+  <label for="piper-base">Piper 地址（只接受本机 http。8787 对照页在未保存地址时用 8800；从 Piper 自己的端口打开本页时用该端口）
+    <input id="piper-base" type="text" value="" spellcheck="false" size="36">
   </label>
   <button type="button" id="piper-base-save">使用这个 Piper 地址</button>
+  <button type="button" id="use-local-8800" hidden>切换到本机 8800</button>
   <p class="note" id="kokoro-where">Kokoro 只能在中文页所在的 http://127.0.0.1:8787/piper-compare.html 里跑，因为它依赖那个页面的跨源隔离和本地 ORT。从 Piper 自己的端口打开本页时只能测 Piper。</p>
 
   <label for="text">文本</label>
@@ -78,5 +80,5 @@
   <p>自动测量和人工音质分开。人工音质只留在这个页面上，不提交，也不改变耗时或 RTF。</p>
   <div id="results"></div>
 </main>
-<script type="module" src="/piper-compare.js"></script>
+<script type="module" src="/piper-compare.js?v=20261116b"></script>
 </html>

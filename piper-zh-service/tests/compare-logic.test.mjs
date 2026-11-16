@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { FIRST_AUDIO_NOTE, PRESETS, RTF_DEFINITION, isLoopbackHttp, kokoroAllowedFor, kokoroAvailableHere, parseWavPcm16, piperApiBase, presetsFor, rtf } from "../static/compare-logic.mjs";
+import { FIRST_AUDIO_NOTE, LEGACY_PIPER_MESSAGE, LOCAL_PIPER_8800, PRESETS, RTF_DEFINITION, isLoopbackHttp, kokoroAllowedFor, kokoroAvailableHere, parseWavPcm16, piperApiBase, piperSupportsLanguageFields, presetsFor, rtf, ttsPayload } from "../static/compare-logic.mjs";
 
 test("RTF is full-utterance time divided by audio duration", () => {
   assert.equal(rtf(0.5, 2), 0.25);
@@ -25,9 +25,27 @@ test("Piper endpoint stays on loopback and can leave 8791", () => {
   assert.equal(isLoopbackHttp("http://127.0.0.1:8791"), true);
   assert.equal(isLoopbackHttp("https://127.0.0.1:8800"), false);
   assert.equal(isLoopbackHttp("http://example.com:8800"), false);
-  assert.equal(piperApiBase({ hostname: "127.0.0.1", port: "8787", protocol: "http:" }, ""), "http://127.0.0.1:8791");
+  assert.equal(piperApiBase({ hostname: "127.0.0.1", port: "8787", protocol: "http:" }, ""), LOCAL_PIPER_8800);
   assert.equal(piperApiBase({ hostname: "127.0.0.1", port: "8787", protocol: "http:" }, "http://127.0.0.1:8800"), "http://127.0.0.1:8800");
+  assert.equal(piperApiBase({ hostname: "127.0.0.1", port: "8791", protocol: "http:" }, ""), "http://127.0.0.1:8791");
+  assert.equal(piperApiBase({ hostname: "127.0.0.1", port: "8800", protocol: "http:" }, ""), "http://127.0.0.1:8800");
+  assert.equal(piperApiBase({ hostname: "127.0.0.1", port: "8787", protocol: "http:" }, "http://127.0.0.1:8791"), "http://127.0.0.1:8791");
   assert.equal(piperApiBase({ hostname: "127.0.0.1", port: "8800", protocol: "http:" }, "http://evil.example:8800"), "http://127.0.0.1:8800");
+});
+
+test("old Piper is recognized and is not sent language fields", () => {
+  const oldHealth = { serviceVersion: "1.0.0", modelReady: true };
+  assert.equal(piperSupportsLanguageFields(oldHealth, false), false);
+  assert.equal(piperSupportsLanguageFields(oldHealth, true), false);
+  assert.equal(piperSupportsLanguageFields({ serviceVersion: "1.1.0" }, false), false);
+  assert.equal(piperSupportsLanguageFields({ serviceVersion: "1.1.0", voices: [] }, true), true);
+  const blocked = ttsPayload("你好。", { language: "zh", voice: "zh_CN-chaowen-medium" }, false);
+  assert.equal(blocked, null);
+  assert.equal(JSON.stringify(blocked || {}).includes("language"), false);
+  const sent = ttsPayload("你好。", { language: "zh", voice: "zh_CN-chaowen-medium" }, true);
+  assert.deepEqual(sent, { text: "你好。", language: "zh", voice: "zh_CN-chaowen-medium" });
+  assert.equal(LEGACY_PIPER_MESSAGE, "当前连接旧版Piper，请连接本机8800或升级服务");
+  assert.equal(LOCAL_PIPER_8800, "http://127.0.0.1:8800");
 });
 
 test("Kokoro stays on Chinese and other languages have their own lines", () => {

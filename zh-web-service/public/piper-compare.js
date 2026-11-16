@@ -1,5 +1,7 @@
 import {
   FIRST_AUDIO_NOTE,
+  LEGACY_PIPER_MESSAGE,
+  LOCAL_PIPER_8800,
   RTF_DEFINITION,
   formatSeconds,
   isLoopbackHttp,
@@ -7,9 +9,11 @@ import {
   kokoroAvailableHere,
   parseWavPcm16,
   piperApiBase,
+  piperSupportsLanguageFields,
   presetsFor,
   rtf,
-} from "./piper-compare-logic.mjs";
+  ttsPayload,
+} from "./piper-compare-logic.mjs?v=20261116b";
 
 const GENDER_LABEL = { female: "女", male: "男", unknown: "性别未知", multiple: "男女声在同一模型" };
 const FALLBACK_VOICES = [
@@ -24,6 +28,8 @@ const FALLBACK_VOICES = [
 ];
 let voiceCatalog = FALLBACK_VOICES;
 let languageCatalog = [];
+let languageFields = false;
+let piperState = "pending";
 
 const $ = (id) => document.getElementById(id);
 let piperApi = piperApiBase(location, window.localStorage.getItem("piperApiBase"));
@@ -39,6 +45,12 @@ $("piper-base-save").addEventListener("click", () => {
     return;
   }
   piperApi = next.replace(/\/$/, "");
+  window.localStorage.setItem("piperApiBase", piperApi);
+  refreshHealth();
+});
+$("use-local-8800").addEventListener("click", () => {
+  piperApi = LOCAL_PIPER_8800;
+  $("piper-base").value = piperApi;
   window.localStorage.setItem("piperApiBase", piperApi);
   refreshHealth();
 });
@@ -130,39 +142,60 @@ function setBusy(value) {
   $("engine").disabled = value;
 }
 
+function renderEndpoint(health) {
+  const version = health && health.serviceVersion ? health.serviceVersion : "未报告";
+  const capability = languageFields ? "可传 language/voice" : piperState === "down" ? "未连上" : piperState === "pending" ? "正在确认" : "只接受 text";
+  $("piper-endpoint").textContent = `当前地址 ${piperApi} · 服务 ${version} · ${capability}`;
+  $("use-local-8800").hidden = piperState !== "legacy";
+}
+
 async function refreshHealth() {
-  await refreshVoices();
   const box = $("health");
+  let health = null;
+  let healthReached = false;
   try {
     const response = await fetch(`${piperApi}/api/health`, { cache: "no-store" });
-    const data = await response.json();
-    const ready = data.modelReady === true;
-    const title = document.createElement("strong");
-    title.className = ready ? "ok" : "warn";
-    const loaded = Array.isArray(data.loadedVoiceIds) ? data.loadedVoiceIds.join(", ") : "";
-    title.textContent = ready
-      ? `默认中文音色文件已在本机（${data.configuredDevice || "cpu"}）${loaded ? "；内存中：" + loaded : "；尚未全部常驻内存"}`
-      : "Piper 进程可访问，但默认中文音色还没准备好";
-    const detail = document.createElement("span");
-    const parts = [
-      data.piperVersion ? `piper-tts ${data.piperVersion}` : "还没读到 piper-tts 版本",
-      data.phonemeType ? `音素 ${data.phonemeType}` : "",
-      data.g2p || "",
-      data.error || "",
-      data.deviceNote || "不探测本机硬件。",
-    ].filter(Boolean);
-    detail.textContent = parts.join(" · ");
-    const license = data.license && data.license.attribution;
-    if (license) $("license-text").textContent = license;
-    box.replaceChildren(title, detail);
-  } catch (error) {
+    healthReached = response.ok;
+    if (response.ok) health = await response.json();
+  } catch {
+    healthReached = false;
+  }
+  const voicesOk = await refreshVoices();
+  languageFields = piperSupportsLanguageFields(health, voicesOk);
+  piperState = !healthReached ? "down" : languageFields ? "current" : "legacy";
+  renderEndpoint(health);
+  if (!healthReached) {
     const title = document.createElement("strong");
     title.className = "bad";
     title.textContent = "Piper 服务没有响应";
     const detail = document.createElement("span");
-    detail.textContent = `请先启动 Piper：python -m piper_zh --host 127.0.0.1 --port <空闲端口> --device cpu。这只说明 ${piperApi} 连不上，不是电脑硬件检测。${error.message || ""}`;
+    detail.textContent = `请先启动 Piper：python -m piper_zh --host 127.0.0.1 --port <空闲端口> --device cpu。这只说明 ${piperApi} 连不上，不是电脑硬件检测。`;
     box.replaceChildren(title, detail);
+    return;
   }
+  const data = health;
+  const ready = data.modelReady === true;
+  const title = document.createElement("strong");
+  title.className = piperState === "legacy" ? "warn" : ready ? "ok" : "warn";
+  const loaded = Array.isArray(data.loadedVoiceIds) ? data.loadedVoiceIds.join(", ") : "";
+  title.textContent = piperState === "legacy"
+    ? LEGACY_PIPER_MESSAGE
+    : ready
+      ? `默认中文音色文件已在本机（${data.configuredDevice || "cpu"}）${loaded ? "；内存中：" + loaded : "；尚未全部常驻内存"}`
+      : "Piper 进程可访问，但默认中文音色还没准备好";
+  const detail = document.createElement("span");
+  const parts = [
+    data.piperVersion ? `piper-tts ${data.piperVersion}` : "还没读到 piper-tts 版本",
+    data.serviceVersion ? `接口 ${data.serviceVersion}` : "",
+    data.phonemeType ? `音素 ${data.phonemeType}` : "",
+    data.g2p || "",
+    data.error || "",
+    data.deviceNote || "不探测本机硬件。",
+  ].filter(Boolean);
+  detail.textContent = parts.join(" · ");
+  const license = data.license && data.license.attribution;
+  if (license) $("license-text").textContent = license;
+  box.replaceChildren(title, detail);
 }
 
 function encodeWav(samples, sampleRate) {
@@ -254,9 +287,18 @@ function renderResult(record) {
 
 async function runPiper(text) {
   const started = performance.now();
-  const body = { text, language: currentLanguage(), voice: $("piper-voice").value };
+  const selection = { language: currentLanguage(), voice: $("piper-voice").value };
   if (!$("piper-speaker-label").hidden && $("piper-speaker").value !== "") {
-    body.speaker = Number($("piper-speaker").value);
+    selection.speaker = Number($("piper-speaker").value);
+  }
+  const body = ttsPayload(text, selection, languageFields);
+  if (!body) {
+    const error = piperState === "down"
+      ? "Piper 服务没有响应"
+      : piperState === "pending"
+        ? "正在确认 Piper 版本，还没有发送合成请求。"
+        : LEGACY_PIPER_MESSAGE;
+    return { ok: false, error, roundTripSeconds: 0 };
   }
   const response = await fetch(`${piperApi}/api/tts`, {
     method: "POST",
@@ -362,17 +404,25 @@ async function runOne() {
 }
 
 async function refreshVoices() {
+  let voicesOk = false;
   try {
     const response = await fetch(`${piperApi}/api/voices`, { cache: "no-store" });
-    const data = await response.json();
-    if (Array.isArray(data.voices) && data.voices.length) voiceCatalog = data.voices;
-    if (Array.isArray(data.languages)) languageCatalog = data.languages;
+    if (response.ok) {
+      const data = await response.json();
+      if (Array.isArray(data.voices) && data.voices.length) {
+        voiceCatalog = data.voices;
+        voicesOk = true;
+      }
+      if (Array.isArray(data.languages)) languageCatalog = data.languages;
+    }
   } catch {
-    voiceCatalog = FALLBACK_VOICES;
+    voicesOk = false;
   }
+  if (!voicesOk) voiceCatalog = FALLBACK_VOICES;
   renderVoiceChoices();
   renderPresets();
   updateGenderCoverage();
+  return voicesOk;
 }
 
 function updateGenderCoverage() {
@@ -420,5 +470,5 @@ $("piper-language").addEventListener("change", () => {
 $("piper-voice").addEventListener("change", renderVoiceChoices);
 renderVoiceChoices();
 renderPresets();
-refreshVoices();
+renderEndpoint(null);
 refreshHealth();

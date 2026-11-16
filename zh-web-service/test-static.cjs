@@ -56,6 +56,10 @@ test("Chinese static server still serves the default page and the Piper compare 
     const script = await get(port, "/piper-compare.js");
     assert.equal(script.status, 200);
     assert.match(script.body, /full-wav|X-Streaming/);
+    assert.equal(script.headers["cache-control"], "no-store");
+    const logic = await get(port, "/piper-compare-logic.mjs");
+    assert.equal(logic.status, 200);
+    assert.equal(logic.headers["cache-control"], "no-store");
     const escaped = await get(port, "/..%2FREADME.md");
     assert.notEqual(escaped.status, 200);
     const outside = await get(port, "/piper-compare.html/../../README.md");

@@ -7,7 +7,7 @@ const server=http.createServer((req,res)=>{
   if(!['GET','HEAD'].includes(req.method)){res.writeHead(405);return res.end('Read-only static service');}
   if(!['127.0.0.1:'+port,'localhost:'+port].includes(req.headers.host)){res.writeHead(403);return res.end('Localhost only');}
   let name;try{name=decodeURIComponent(new URL(req.url,'http://127.0.0.1').pathname)}catch{res.writeHead(400);return res.end('Bad URL')}
-  if(name.startsWith('/piper-compare.'))res.setHeader('Cache-Control','no-store');
+  if(name.startsWith('/piper-compare'))res.setHeader('Cache-Control','no-store');
   const target=path.resolve(root,'.'+(name==='/'?'/index.html':name));
   if(!target.startsWith(root+path.sep)){res.writeHead(403);return res.end('Forbidden')}
   fs.stat(target,(error,stat)=>{

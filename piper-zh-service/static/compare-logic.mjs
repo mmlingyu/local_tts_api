@@ -245,14 +245,38 @@ export function isLoopbackHttp(value) {
   return Number.isInteger(port) && port >= 1 && port <= 65535;
 }
 
+export const LOCAL_PIPER_8800 = "http://127.0.0.1:8800";
+
+export const LEGACY_PIPER_MESSAGE = "当前连接旧版Piper，请连接本机8800或升级服务";
+
 export function piperApiBase(locationLike, stored) {
   const saved = String(stored || "").trim().replace(/\/$/, "");
   if (isLoopbackHttp(saved)) return saved;
   const host = locationLike && locationLike.hostname;
   const port = locationLike && String(locationLike.port || "");
+  const protocol = (locationLike && locationLike.protocol) || "http:";
   if ((host === "127.0.0.1" || host === "localhost") && port && port !== "8787") {
-    const protocol = locationLike.protocol || "http:";
     return `${protocol}//${host}:${port}`;
   }
+  if ((host === "127.0.0.1" || host === "localhost") && port === "8787") {
+    return LOCAL_PIPER_8800;
+  }
   return "http://127.0.0.1:8791";
+}
+
+export function piperSupportsLanguageFields(health, voicesOk) {
+  if (voicesOk !== true) return false;
+  if (!health || typeof health !== "object") return false;
+  const version = health.serviceVersion;
+  if (version == null || version === "" || version === "1.0.0") return false;
+  return true;
+}
+
+export function ttsPayload(text, selection, supportsLanguageFields) {
+  if (!supportsLanguageFields) return null;
+  const body = { text };
+  if (selection && selection.language) body.language = selection.language;
+  if (selection && selection.voice) body.voice = selection.voice;
+  if (selection && selection.speaker != null && selection.speaker !== "") body.speaker = selection.speaker;
+  return body;
 }
