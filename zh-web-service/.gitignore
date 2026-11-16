@@ -2,6 +2,7 @@ node_modules/
 public/kokoro/voices/*.bin
 public/ort/
 public/app.js
+public/kokoro-client.js
 public/app.js.map
 test-output/
 browser-profile/

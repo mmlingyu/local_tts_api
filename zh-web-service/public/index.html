@@ -122,7 +122,8 @@ main:has(#engine option[value="phonon"]:checked) #kokoro-voice-field{display:non
 <audio id="player" controls></audio>
 <pre id="details">尚未合成</pre>
 <small>中文继续使用浏览器内 Kokoro；WebGPU 不可用时回退 WASM。英文 Phonon 请求仅发送到本机 http://127.0.0.1:8790，不上传互联网。Phonon 仅英文，语速固定 1×。不调用 8880。<br>
-<a href="http://127.0.0.1:8790/compare.html" target="_blank" rel="noopener">Phonon / Kokoro 同文案试听对比</a></small>
+<a href="http://127.0.0.1:8790/compare.html" target="_blank" rel="noopener">Phonon / Kokoro 同文案试听对比</a><br>
+<a href="/piper-compare.html">Piper 普通话对照测试（可选，不改变上面的默认引擎）</a></small>
 </main>
 <script type="module" src="/app.js"></script>
 <script type="module" src="/phonon-bridge.js?v=20261112-18"></script>
