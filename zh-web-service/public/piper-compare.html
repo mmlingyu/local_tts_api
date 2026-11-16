@@ -23,6 +23,12 @@
 
   <h2>合成</h2>
   <div class="row">
+    <label>合成引擎
+      <select id="synth-engine">
+        <option value="piper" selected>Piper（默认）</option>
+        <option value="pocket">Pocket TTS（官方语言，不含中日韩）</option>
+      </select>
+    </label>
     <label>Piper 语言
       <select id="piper-language">
         <option value="zh" selected>zh 中文</option>
@@ -80,5 +86,5 @@
   <p>自动测量和人工音质分开。人工音质只留在这个页面上，不提交，也不改变耗时或 RTF。</p>
   <div id="results"></div>
 </main>
-<script type="module" src="/piper-compare.js?v=20261116b"></script>
+<script type="module" src="/piper-compare.js?v=20261116c"></script>
 </html>

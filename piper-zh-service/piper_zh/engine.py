@@ -52,6 +52,7 @@ class Synthesis:
     model_id: str
     language: str = "zh"
     speaker_id: int | None = None
+    engine_header: str = "Piper-zh"
 
 
 def wav_duration(blob: bytes) -> tuple[int, float, float]:

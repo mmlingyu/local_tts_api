@@ -272,6 +272,21 @@ export function piperSupportsLanguageFields(health, voicesOk) {
   return true;
 }
 
+export const POCKET_VOICES = {
+  english: ["alba"],
+  french: ["estelle"],
+  german: ["juergen"],
+  portuguese: ["rafael"],
+  italian: ["giovanni"],
+  spanish: ["lola"],
+  dutch: ["daan"],
+};
+
+export function pocketRequest(text, language, voice, supportsLanguageFields) {
+  if (!supportsLanguageFields) return null;
+  return { engine: "pocket", text, language, voice };
+}
+
 export function ttsPayload(text, selection, supportsLanguageFields) {
   if (!supportsLanguageFields) return null;
   const body = { text };

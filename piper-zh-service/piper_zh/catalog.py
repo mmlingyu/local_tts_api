@@ -490,13 +490,40 @@ def language_rows(loaded_ids: set[str] | None = None, verified_ids: set[str] | N
     return rows
 
 
-def parse_tts_fields(payload: dict) -> tuple[str, str, str, int | None]:
-    if not isinstance(payload, dict) or "text" not in payload or not set(payload) <= {"text", "language", "voice", "speaker"}:
+@dataclass(frozen=True)
+class TtsRequest:
+    engine: str
+    text: str
+    language: str
+    voice: str
+    speaker: int | None
+
+
+def parse_tts_fields(payload: dict) -> TtsRequest:
+    if not isinstance(payload, dict) or "text" not in payload or not set(payload) <= {"text", "language", "voice", "speaker", "engine"}:
         raise RequestError(
-            '只接受 {"text": "..."}，可选 language、voice、speaker。不能传 gender，也不能指定模型、路径、地址或命令。',
+            '只接受 {"text": "..."}，可选 engine、language、voice、speaker。不能传 gender，也不能指定模型、路径、地址或命令。',
             400,
             "bad_request",
         )
+    engine = payload.get("engine", "piper")
+    if engine is None:
+        engine = "piper"
+    if not isinstance(engine, str) or engine not in {"piper", "pocket"}:
+        raise RequestError("engine 只能是 piper 或 pocket。省略时仍是 piper。", 400, "bad_engine")
+    if engine == "pocket":
+        import sys
+
+        root = Path(__file__).resolve().parents[2] / "pocket-tts-service"
+        if str(root) not in sys.path:
+            sys.path.insert(0, str(root))
+        from pocket_local.catalog import PocketRequestError, parse_pocket
+
+        try:
+            text, language, voice = parse_pocket(payload)
+        except PocketRequestError as exc:
+            raise RequestError(exc.message, exc.status, exc.code) from exc
+        return TtsRequest("pocket", text, language, voice, None)
     text = payload["text"]
     if not isinstance(text, str) or "\x00" in text:
         raise RequestError("text 必须是不含空字符的字符串。", 400, "bad_request")
@@ -548,7 +575,7 @@ def parse_tts_fields(payload: dict) -> tuple[str, str, str, int | None]:
                 )
     _reject_wrong_script(spec.language, text)
     speaker_id = _speaker_id(spec, payload)
-    return text, spec.language, spec.voice_id, speaker_id
+    return TtsRequest("piper", text, spec.language, spec.voice_id, speaker_id)
 
 
 def _speaker_id(spec: VoiceSpec, payload: dict) -> int | None:

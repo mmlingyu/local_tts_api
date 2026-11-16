@@ -300,6 +300,57 @@ def test_gender_is_metadata_not_a_request_field(server):
     assert "url" not in zh
 
 
+def test_pocket_engine_is_opt_in_and_rejects_unsupported_languages(server):
+    from piper_zh.engine import Synthesis
+
+    class FakePocket:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def status(self) -> dict:
+            return {"installed": True, "prepared": False, "modelReady": False, "languages": ["english"]}
+
+        def voices(self) -> dict:
+            return {"engine": "pocket", "voices": [{"voice": "alba", "language": "english", "gender": "unknown"}]}
+
+        def synthesize(self, text: str, language: str, voice: str) -> Synthesis:
+            self.calls.append((text, language, voice))
+            return Synthesis(
+                wav=tone_wav(rate=24000),
+                sample_rate=24000,
+                duration_seconds=0.4,
+                synth_seconds=0.05,
+                phoneme_type="pocket",
+                model_id=voice,
+                language=language,
+                engine_header="Pocket-TTS",
+            )
+
+    httpd, engine, base = server
+    httpd.service_state.pocket = FakePocket()
+    status, headers, body = request(base, "/api/tts", {"engine": "pocket", "text": "Hello.", "voice": "alba"})
+    assert status == 200
+    assert headers["X-Engine"] == "Pocket-TTS"
+    assert headers["X-Sample-Rate"] == "24000"
+    assert httpd.service_state.pocket.calls == [("Hello.", "english", "alba")]
+    assert engine.calls == []
+    status, _headers, body = request(base, "/api/tts", {"text": "你好。"})
+    assert status == 200
+    assert engine.calls == ["你好。"]
+    status, _headers, body = request(base, "/api/tts", {"engine": "pocket", "text": "你好。", "language": "zh"})
+    assert status == 400
+    assert json.loads(body)["code"] == "unsupported_language"
+    status, _headers, body = request(base, "/api/tts", {"engine": "pocket", "text": "Hello.", "voice": "hf://kyutai/tts-voices/x.wav"})
+    assert status == 400
+    assert json.loads(body)["code"] == "unknown_voice"
+    status, _headers, body = request(base, "/api/tts", {"engine": "other", "text": "Hello."})
+    assert status == 400
+    assert json.loads(body)["code"] == "bad_engine"
+    status, _headers, body = request(base, "/api/voices?engine=pocket")
+    assert status == 200
+    assert json.loads(body)["voices"][0]["voice"] == "alba"
+
+
 def test_voice_cache_drops_the_oldest_and_stays_serial():
     from piper_zh.catalog import BY_ID
     from piper_zh.engine import Synthesis, VoicePool

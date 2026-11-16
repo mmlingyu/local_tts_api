@@ -8,7 +8,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Callable
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from .catalog import RequestError, inventory, language_rows, parse_tts_fields
 from .engine import DEFAULT_G2P_DIR, DEFAULT_HF_HOME, DEFAULT_MODEL, VoicePool
@@ -32,9 +32,10 @@ SYNTH_TIMEOUT_SECONDS = 180
 
 
 class ServiceState:
-    def __init__(self, engine, port: int) -> None:
+    def __init__(self, engine, port: int, pocket=None) -> None:
         self.engine = engine
         self.port = port
+        self.pocket = pocket
         self._lock = threading.Lock()
         self.busy = False
 
@@ -147,9 +148,27 @@ def make_handler(state: ServiceState) -> type[BaseHTTPRequestHandler]:
                 payload = state.engine.status()
                 payload["busy"] = state.busy
                 payload["port"] = state.port
+                pocket_status = state.pocket.status() if state.pocket is not None else {"installed": False}
+                payload["engines"] = {
+                    "piper": {
+                        "serviceVersion": payload.get("serviceVersion"),
+                        "modelReady": payload.get("modelReady"),
+                    },
+                    "pocket": pocket_status,
+                }
                 self._json(200, payload)
                 return
             if path == "/api/voices":
+                asked = (parse_qs(urlparse(self.path).query).get("engine") or ["piper"])[0]
+                if asked == "pocket":
+                    if state.pocket is None:
+                        self._json(200, {"engine": "pocket", "voices": [], "languages": []})
+                        return
+                    self._json(200, state.pocket.voices())
+                    return
+                if asked != "piper":
+                    self._json(400, {"error": "engine 只能是 piper 或 pocket。", "code": "bad_engine"})
+                    return
                 status_payload = state.engine.status()
                 voices = status_payload.get("voices")
                 languages = status_payload.get("languages")
@@ -199,11 +218,12 @@ def make_handler(state: ServiceState) -> type[BaseHTTPRequestHandler]:
                 self._json(400, {"error": "JSON 无法解析。"})
                 return
             try:
-                text, language, voice, speaker = parse_tts_fields(payload)
+                request = parse_tts_fields(payload)
             except RequestError as exc:
                 self._json(exc.status, {"error": exc.message, "code": exc.code})
                 return
-            if not state.engine.ready:
+            text, language, voice, speaker = request.text, request.language, request.voice, request.speaker
+            if request.engine == "piper" and not state.engine.ready:
                 self._json(503, {"error": state.engine.error or "模型还没准备好。", "modelReady": False})
                 return
             if not state.try_begin():
@@ -215,9 +235,14 @@ def make_handler(state: ServiceState) -> type[BaseHTTPRequestHandler]:
 
             def work() -> None:
                 try:
-                    holder["result"] = state.engine.synthesize(
-                        text, language=language, voice=voice, speaker=speaker
-                    )
+                    if request.engine == "pocket":
+                        if state.pocket is None:
+                            raise RequestError("Pocket 没有接入这个进程。", 503, "pocket_not_ready")
+                        holder["result"] = state.pocket.synthesize(text, language, voice)
+                    else:
+                        holder["result"] = state.engine.synthesize(
+                            text, language=language, voice=voice, speaker=speaker
+                        )
                 except RequestError as exc:
                     holder["request_error"] = exc
                 except Exception as exc:  # noqa: BLE001
@@ -248,7 +273,7 @@ def make_handler(state: ServiceState) -> type[BaseHTTPRequestHandler]:
                 "X-Synth-Seconds": f"{result.synth_seconds:.6f}",
                 "X-RTF": f"{rtf:.6f}",
                 "X-Sample-Rate": str(result.sample_rate),
-                "X-Engine": "Piper-zh",
+                "X-Engine": getattr(result, "engine_header", "Piper-zh"),
                 "X-Model": result.model_id,
                 "X-Phoneme-Type": result.phoneme_type,
                 "X-Streaming": "full-wav",
@@ -263,7 +288,7 @@ def make_handler(state: ServiceState) -> type[BaseHTTPRequestHandler]:
     return Handler
 
 
-def create_server(engine, host: str = "127.0.0.1", port: int = 8791) -> ThreadingHTTPServer:
+def create_server(engine, host: str = "127.0.0.1", port: int = 8791, pocket=None) -> ThreadingHTTPServer:
     if host not in {"127.0.0.1", "localhost"}:
         raise ValueError("Piper 服务只能绑定回环地址。")
     state_port = port
@@ -281,7 +306,16 @@ def create_server(engine, host: str = "127.0.0.1", port: int = 8791) -> Threadin
     httpd.state = httpd.RequestHandlerClass  # type: ignore[attr-defined]
     # The handler closes over the ServiceState instance created above. Rebuild
     # so Host checks and CORS use the port the OS actually assigned.
-    bound = ServiceState(engine, actual_port)
+    if pocket is None:
+        import sys
+
+        pocket_root = Path(__file__).resolve().parents[2] / "pocket-tts-service"
+        if str(pocket_root) not in sys.path:
+            sys.path.insert(0, str(pocket_root))
+        from pocket_local.bridge import PocketBridge
+
+        pocket = PocketBridge()
+    bound = ServiceState(engine, actual_port, pocket=pocket)
     httpd.RequestHandlerClass = make_handler(bound)
     httpd.service_state = bound  # type: ignore[attr-defined]
     return httpd
@@ -331,6 +365,9 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         return 0
     finally:
+        pocket_worker = getattr(httpd, "service_state", None)
+        if pocket_worker is not None and getattr(pocket_worker, "pocket", None) is not None:
+            pocket_worker.pocket.close()
         httpd.server_close()
     return 0
 

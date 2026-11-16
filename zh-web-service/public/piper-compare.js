@@ -10,10 +10,11 @@ import {
   parseWavPcm16,
   piperApiBase,
   piperSupportsLanguageFields,
+  pocketRequest,
   presetsFor,
   rtf,
   ttsPayload,
-} from "./piper-compare-logic.mjs?v=20261116b";
+} from "./piper-compare-logic.mjs?v=20261116c";
 
 const GENDER_LABEL = { female: "女", male: "男", unknown: "性别未知", multiple: "男女声在同一模型" };
 const FALLBACK_VOICES = [
@@ -291,7 +292,19 @@ async function runPiper(text) {
   if (!$("piper-speaker-label").hidden && $("piper-speaker").value !== "") {
     selection.speaker = Number($("piper-speaker").value);
   }
-  const body = ttsPayload(text, selection, languageFields);
+  let body;
+  if ($("synth-engine") && $("synth-engine").value === "pocket") {
+    const mapped = {
+      en: ["english", "alba"],
+      fr: ["french", "estelle"],
+    }[currentLanguage()];
+    if (!mapped) {
+      return { ok: false, error: "Pocket TTS 官方不支持这个语言，不会改用 Piper。", roundTripSeconds: 0 };
+    }
+    body = pocketRequest(text, mapped[0], mapped[1], languageFields);
+  } else {
+    body = ttsPayload(text, selection, languageFields);
+  }
   if (!body) {
     const error = piperState === "down"
       ? "Piper 服务没有响应"

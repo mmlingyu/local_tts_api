@@ -19,6 +19,14 @@
 
 下文示例里的 `PIPER` 用 `http://127.0.0.1:8800` 表示用户电脑上的当前 Piper。源码默认监听端口仍是 `8791`。把示例换到默认端口时，只改这一个地址。Phonon 示例用源码默认 `8790`，不表示已经确认它正在运行。
 
+同一个 `POST /api/tts` 可以用 `engine` 选择引擎。省略或 `piper` 时仍是现有 Piper。`pocket` 使用同一进程里的 Pocket worker，不另开端口。
+
+```json
+{"engine":"pocket","text":"Hello.","language":"english","voice":"alba"}
+```
+
+Pocket 官方语言是 english、french、german、portuguese、italian、spanish、dutch。中文、日语、韩语返回 400，不会改用 Piper。`voice` 只能是内置名字。模型 `kyutai/pocket-tts` 需要先在 Hugging Face 接受许可；页面点击不会下载。准备步骤见 `pocket-tts-service/README.zh-CN.md`。
+
 对照页的地址规则：
 
 - 从 `8787` 打开、且浏览器没有保存过地址时，页面默认请求 `http://127.0.0.1:8800`。这是因为这台机器上的 `8791` 可能是旧 Piper，只接受 `{"text":"..."}`。

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { FIRST_AUDIO_NOTE, LEGACY_PIPER_MESSAGE, LOCAL_PIPER_8800, PRESETS, RTF_DEFINITION, isLoopbackHttp, kokoroAllowedFor, kokoroAvailableHere, parseWavPcm16, piperApiBase, piperSupportsLanguageFields, presetsFor, rtf, ttsPayload } from "../static/compare-logic.mjs";
+import { FIRST_AUDIO_NOTE, LEGACY_PIPER_MESSAGE, LOCAL_PIPER_8800, PRESETS, RTF_DEFINITION, isLoopbackHttp, kokoroAllowedFor, kokoroAvailableHere, parseWavPcm16, piperApiBase, piperSupportsLanguageFields, pocketRequest, presetsFor, rtf, ttsPayload } from "../static/compare-logic.mjs";
 
 test("RTF is full-utterance time divided by audio duration", () => {
   assert.equal(rtf(0.5, 2), 0.25);
@@ -46,6 +46,13 @@ test("old Piper is recognized and is not sent language fields", () => {
   assert.deepEqual(sent, { text: "你好。", language: "zh", voice: "zh_CN-chaowen-medium" });
   assert.equal(LEGACY_PIPER_MESSAGE, "当前连接旧版Piper，请连接本机8800或升级服务");
   assert.equal(LOCAL_PIPER_8800, "http://127.0.0.1:8800");
+  assert.equal(pocketRequest("Hello.", "english", "alba", false), null);
+  assert.deepEqual(pocketRequest("Hello.", "english", "alba", true), {
+    engine: "pocket",
+    text: "Hello.",
+    language: "english",
+    voice: "alba",
+  });
 });
 
 test("Kokoro stays on Chinese and other languages have their own lines", () => {
