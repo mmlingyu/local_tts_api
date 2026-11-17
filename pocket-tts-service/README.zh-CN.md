@@ -20,7 +20,7 @@ Pocket TTS 接在现有 Piper HTTP 进程里面。对外仍然只有 `POST /api/
 
 然后重启原来的 8800 进程，让它加载新的 worker 代码。页面点击不会下载。
 
-Linux 上直接 `pip install pocket-tts` 会拉 CUDA 版 torch，体积大约数 GB。准备脚本使用 CPU 索引。Windows 的官方 torch 轮子本身是 CPU 版，虚拟环境仍要单独占用大约 2 GB 或更多磁盘，内存会在第一次加载模型时上升。不要把这些包装进 `piper-zh-service/.venv`。
+Linux 上直接 `pip install pocket-tts` 会拉 PyPI 上的 CUDA 版 torch，体积大约数 GB。`prepare-pocket.sh` 先只用 `https://download.pytorch.org/whl/cpu` 安装 `torch>=2.5.0`，再安装 `requirements.txt`，并要求版本号带 `+cpu`、`torch.version.cuda` 为空。不要只加 `--extra-index-url`，那样仍可能选中版本更高的 CUDA 轮。这次没有在本机安装 torch，所以上面的检查还没有对一份真实的轮子跑过。Windows 的官方 torch 轮子本身是 CPU 版，虚拟环境仍要单独占用大约 2 GB 或更多磁盘，内存会在第一次加载模型时上升。不要把这些包装进 `piper-zh-service/.venv`。
 
 ```powershell
 cd D:\aispace\local_tts_api\pocket-tts-service
