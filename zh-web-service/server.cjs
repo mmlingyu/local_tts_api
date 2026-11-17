@@ -7,11 +7,13 @@ const server=http.createServer((req,res)=>{
   if(!['GET','HEAD'].includes(req.method)){res.writeHead(405);return res.end('Read-only static service');}
   if(!['127.0.0.1:'+port,'localhost:'+port].includes(req.headers.host)){res.writeHead(403);return res.end('Localhost only');}
   let name;try{name=decodeURIComponent(new URL(req.url,'http://127.0.0.1').pathname)}catch{res.writeHead(400);return res.end('Bad URL')}
+  if(name.startsWith('/piper-compare'))res.setHeader('Cache-Control','no-store');
   const target=path.resolve(root,'.'+(name==='/'?'/index.html':name));
   if(!target.startsWith(root+path.sep)){res.writeHead(403);return res.end('Forbidden')}
   fs.stat(target,(error,stat)=>{
     if(error||!stat.isFile()){res.writeHead(404);return res.end('Not found')}
-    res.setHeader('Content-Type',mime[path.extname(target)]||'application/octet-stream');res.setHeader('Content-Length',stat.size);res.setHeader('Cache-Control','public, max-age=3600');
+    res.setHeader('Content-Type',mime[path.extname(target)]||'application/octet-stream');res.setHeader('Content-Length',stat.size);
+    if(!res.getHeader('Cache-Control'))res.setHeader('Cache-Control','public, max-age=3600');
     if(req.method==='HEAD')return res.end();fs.createReadStream(target).on('error',()=>res.destroy()).pipe(res);
   });
 });

@@ -1,6 +1,6 @@
 # 本机中文语音合成测试网页
 
-入口： http://127.0.0.1:8787/ 。仅绑定 IPv4 回环地址，不向局域网开放。8787 被占用时启动脚本会选用下一个空闲端口，并显示实际地址。
+入口： http://127.0.0.1:8787/ 。仅绑定 IPv4 回环地址，不向局域网开放。对照页是 http://127.0.0.1:8787/piper-compare.html ，文件在本目录 `public/`，不依赖旁边有没有 `piper-zh-service`。8787 已被其他进程占用时，启动脚本会停下来并打印占用进程，不再悄悄改到下一个端口。
 
 ## 启停
 
@@ -13,8 +13,8 @@ powershell -ExecutionPolicy Bypass -File D:\aispace\zh-web-service\stop-zh-web.p
 
 ## 实现
 
-- 独立新目录，不修改、读取或复制 chickadee 已有扩展源码。
-- 引用原有安装依赖目录中的 @uzen/kokoro-js、esbuild、Playwright；esbuild 打包浏览器程序。
+- 独立目录。构建使用本目录 `npm install` 锁定的 `@uzen/kokoro-js@1.2.4` 和 `esbuild@0.25.12`，不再读取 `D:\aispace\chickadee\extension\node_modules`。
+- `verify.cjs` 仍使用原机器上的 Playwright 与 Edge profile；那条旧测试不是 Piper 对照页的测试。
 - 中文模型：onnx-community/Kokoro-82M-v1.1-zh-ONNX，FP32；优先 WebGPU，初始化不可用时回退 WASM。
 - ONNX Runtime 的 wasm/mjs（含 asyncify、jsep、jspi）由本机静态托管。COOP/COEP 开启，资源设置 CORP。
 - 合成发生在浏览器；Node 仅提供静态文件。没有调用 localhost:8880 或任何语音合成后端。

@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-store">
+<title>Piper 与 Kokoro 对照测试</title>
+<link rel="stylesheet" href="/piper-compare.css?v=20261116e">
+<main>
+  <h1>Piper 与 Kokoro 对照测试</h1>
+  <p class="lede">默认中文合成仍是 8787 上的 Kokoro。Piper 是可选的本机服务，白名单里有中文、英语、日语、韩语和法语。点击不会下载模型。Phonon 的英文页面保持原样，不在这里被替换。</p>
+
+  <section class="license" id="license">
+    <strong>许可与训练链</strong>
+    <p id="license-text">Piper 引擎是 GPL-3.0-or-later。建议的普通话音色 zh_CN-chaowen-medium 录音为 CC0，并从 Hi-Fi TTS reader 92（Cori Samuel，CC BY 4.0）的 en_US-hifi_tts_92-medium 微调。分发时请署名 Hi-Fi TTS。引擎许可证不覆盖音色权重。这不是法律意见。</p>
+  </section>
+
+  <h2>服务状态</h2>
+  <section class="health" id="health" aria-live="polite">
+    <strong class="warn">正在读取 Piper 健康检查…</strong>
+    <span>只报告下方填写的本机 Piper 地址是否已加载模型，不探测这台电脑的 GPU 或内存，也不会扫描其他端口。</span>
+  </section>
+  <p class="note" id="piper-endpoint">正在确认 Piper 地址和版本。</p>
+
+  <h2>合成</h2>
+  <div class="row">
+    <label>合成引擎
+      <select id="synth-engine">
+        <option value="piper" selected>Piper（默认）</option>
+        <option value="pocket">Pocket TTS（english_18m_2026-10，18.2M）</option>
+      </select>
+    </label>
+    <label id="pocket-voice-label">Pocket 音色（18.2M 内置 27 个，性别未知）
+      <select id="pocket-voice"></select>
+    </label>
+    <label>Piper 语言
+      <select id="piper-language">
+        <option value="zh" selected>zh 中文</option>
+        <option value="en">en 英语</option>
+        <option value="ja">ja 日语</option>
+        <option value="ko">ko 韩语</option>
+        <option value="fr">fr 法语</option>
+      </select>
+    </label>
+    <label>Piper 音色
+      <select id="piper-voice"></select>
+    </label>
+    <label id="piper-speaker-label" hidden>说话人
+      <select id="piper-speaker"></select>
+    </label>
+    <label>引擎
+      <select id="engine">
+        <option value="piper" selected>Piper（白名单音色）</option>
+        <option value="kokoro">Kokoro（仅中文对照，沿用现有音色）</option>
+      </select>
+    </label>
+    <label id="kokoro-voice-label">Kokoro 音色
+      <select id="kokoro-voice">
+        <option value="zf_001">zf_001 女声</option>
+        <option value="zf_002">zf_002 女声</option>
+        <option value="zm_009">zm_009 男声</option>
+        <option value="zm_010">zm_010 男声</option>
+      </select>
+    </label>
+  </div>
+  <label class="optin" id="kokoro-optin-label">
+    <input id="kokoro-optin" type="checkbox">
+    我确认现在加载 Kokoro。若浏览器没有缓存，Transformers.js 会访问 Hugging Face 下载 ONNX；这一步不会下载 Piper 模型。未勾选时点击 Kokoro 只会提示，不会发请求。
+  </label>
+  <label for="piper-base">Piper 地址（只接受本机 http。8787 对照页在未保存地址时用 8800；从 Piper 自己的端口打开本页时用该端口）
+    <input id="piper-base" type="text" value="" spellcheck="false" size="36">
+  </label>
+  <button type="button" id="piper-base-save">使用这个 Piper 地址</button>
+  <button type="button" id="use-local-8800" hidden>切换到本机 8800</button>
+  <p class="note" id="kokoro-where">Kokoro 只能在中文页所在的 http://127.0.0.1:8787/piper-compare.html 里跑，因为它依赖那个页面的跨源隔离和本地 ORT。从 Piper 自己的端口打开本页时只能测 Piper。</p>
+
+  <label for="text">文本</label>
+  <textarea id="text">银行行长到了重庆。</textarea>
+  <p id="gender-coverage">正在读取各语言已核实的男女声。</p>
+  <p id="preset-note">中文预设仍覆盖多音字、数字日期、金额、中英混读、变调轻声、儿化、标点和长文本。其他语言只用该语言的试验句。日语、韩语、法语不会调用中文 Kokoro 音色。</p>
+  <div id="presets" class="presets"></div>
+  <div class="row">
+    <button class="primary" id="run-one" type="button">合成当前文本</button>
+    <button id="run-both" type="button">同一英文文本分别合成 Piper 和 Pocket</button>
+    <button id="run-all" type="button">按预设逐条跑当前引擎</button>
+    <button id="stop" type="button" disabled>停止后续条目</button>
+  </div>
+  <p class="note" id="pocket-readiness">Pocket 只和英语 Piper 比同一段文字。中文、日语、韩语、法语仍只走 Piper，不会改成英语再比较。整段耗时不是首音，也不是音质排名。缺音色时页面不会下载。文件标记已在，也不表示这次推理已经成功。</p>
+  <p class="note" id="rtf-definition"></p>
+
+  <h2>结果</h2>
+  <p>自动测量和人工音质分开。人工音质只留在这个页面上，不提交，也不改变耗时或 RTF。</p>
+  <div id="results"></div>
+</main>
+<script type="module" src="/piper-compare.js?v=20261116e"></script>
+</html>

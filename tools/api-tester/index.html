@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>本地语音接口自测</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <header class="top">
+    <div>
+      <p class="eyebrow">本机代理 · 不保存令牌</p>
+      <h1>语音接口自测</h1>
+    </div>
+    <p id="local-origin" class="origin"></p>
+  </header>
+  <main>
+    <section class="card" aria-labelledby="connect-title">
+      <div class="card-head">
+        <h2 id="connect-title">连接</h2>
+        <p id="connection-state" class="state">尚未连接</p>
+      </div>
+      <label for="base">目标服务地址</label>
+      <input id="base" name="base" type="url" spellcheck="false" value="https://124.222.128.61" autocomplete="off">
+      <p class="hint">令牌只随这次请求发往上面这个地址。公网必须是 https。页面不读取磁盘上的令牌文件，也不写入本地存储或网址。</p>
+      <label for="token">令牌</label>
+      <div class="token-row">
+        <input id="token" name="token" type="password" autocomplete="off" spellcheck="false" value="">
+        <button id="toggle-token" type="button">显示</button>
+        <button id="clear-token" type="button">清空令牌</button>
+      </div>
+      <p class="hint">若你已经把令牌放在当前用户主目录的 <code>.local-tts-api/client-token.txt</code>，需要自己打开并粘贴。这里不会自动读取。</p>
+      <div class="actions">
+        <button id="check-health" type="button">测试连接</button>
+        <button id="load-voices" type="button">加载 Piper 与 Phonon 音色</button>
+      </div>
+      <p id="banner" class="banner" role="status"></p>
+    </section>
+
+    <section class="card" aria-labelledby="request-title">
+      <div class="card-head">
+        <h2 id="request-title">合成</h2>
+      </div>
+      <div class="grid">
+        <label>引擎
+          <select id="engine">
+            <option value="piper">Piper</option>
+            <option value="phonon">Phonon</option>
+          </select>
+        </label>
+        <label>语言
+          <select id="language"></select>
+        </label>
+        <label>音色
+          <select id="voice"></select>
+        </label>
+        <label id="speaker-label">说话人
+          <select id="speaker"></select>
+        </label>
+      </div>
+      <label for="text">文本</label>
+      <textarea id="text" rows="5">银行行长到了重庆。</textarea>
+      <p id="counter" class="hint"></p>
+      <div class="actions">
+        <button id="speak" type="button">合成</button>
+        <button id="cancel" type="button" disabled>停止等待</button>
+      </div>
+      <p class="hint">停止等待只取消浏览器这一次等待。服务端如果已经开始合成，这个按钮不能把它停掉。</p>
+    </section>
+
+    <section class="card" aria-labelledby="result-title">
+      <div class="card-head">
+        <h2 id="result-title">结果</h2>
+        <p id="result-state" class="state">尚未合成</p>
+      </div>
+      <dl class="metrics">
+        <div><dt>HTTP</dt><dd id="metric-status">—</dd></div>
+        <div><dt>引擎</dt><dd id="metric-engine">—</dd></div>
+        <div><dt>采样率</dt><dd id="metric-rate">—</dd></div>
+        <div><dt>音频时长</dt><dd id="metric-duration">—</dd></div>
+        <div><dt>合成耗时</dt><dd id="metric-synth">—</dd></div>
+      </dl>
+      <audio id="player" controls></audio>
+      <div class="actions">
+        <button id="download" type="button" disabled>下载 WAV</button>
+      </div>
+      <details>
+        <summary>响应详情（已去掉令牌）</summary>
+        <pre id="detail">还没有请求。</pre>
+      </details>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+# 由 deploy/install-local-tts.sh --apply 写到 /etc/systemd/system，并改写路径。
+# 不管理 3080 上的 DeepSeek，也不管理 8080 上的 Caddy。默认不 enable。
+
+[Unit]
+Description=Local unified TTS API (loopback only)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/local-tts-api/piper-zh-service
+EnvironmentFile=-/etc/local-tts-api.env
+ExecStart=/opt/local-tts-api/deploy/run-local-tts.sh
+Restart=on-failure
+NoNewPrivileges=true
+PrivateTmp=true
+# 目标机器大约 3.6GiB 内存。这个上限是为了避免 TTS 把整机吃满。
+# 它不是测出来的推理峰值。模型还没在这台机器上加载过。
+MemoryMax=2G
+CPUQuota=350%
+
+[Install]
+WantedBy=multi-user.target

@@ -11,6 +11,11 @@
 
 - [`zh-web-service/README.zh-CN.md`](zh-web-service/README.zh-CN.md)
 - [`phonon/README.zh-CN.md`](phonon/README.zh-CN.md)
+- [`piper-zh-service/README.zh-CN.md`](piper-zh-service/README.zh-CN.md)
+- [`docs/API.zh-CN.md`](docs/API.zh-CN.md)
+- [`docs/API-INTEGRATION.zh-CN.md`](docs/API-INTEGRATION.zh-CN.md)（第三方应用接入。接口行为以 `dfb62eb` 为准）
+- [`pocket-tts-service/README.zh-CN.md`](pocket-tts-service/README.zh-CN.md)
+- [`deploy/README.zh-CN.md`](deploy/README.zh-CN.md)（Ubuntu 安装。`POST /api/tts` 可选 piper、phonon、pocket。模型仍不在仓库里。）
 
 如果这两份说明与本文件冲突，以「模型未入库、新机器不能直接运行」这条边界为准。
 
@@ -34,6 +39,12 @@
 │   └── public/
 │       ├── index.html
 │       └── phonon-bridge.js
+├── piper-zh-service/        # 可选的本机 Piper 普通话，默认监听 8791
+│   ├── piper_zh/            # Python 服务、显式下载、引擎
+│   ├── static/              # 对照测试页
+│   ├── tests/
+│   ├── requirements.txt
+│   └── README.zh-CN.md
 └── phonon/                  # Phonon 英文 TTS 配套，原环境监听 8790
     ├── start-phonon-web.ps1
     ├── stop-phonon-web.ps1
@@ -91,7 +102,7 @@
 1. 进入 `zh-web-service`。
 2. 若还没有 `node_modules`，按该目录 `package.json` 在本机安装依赖。
 3. 若还没有 `public/app.js`，使用仓库中的 `build.cjs` 在本机构建；这个生成文件故意没有入库。
-4. 确认 `public/ort/` 与 `public/kokoro/voices/` 中的本机依赖已存在。
+4. 确认 `public/ort/`（由 `build.cjs` 从本目录依赖复制）与 `public/kokoro/voices/` 中的音色已存在。音色仍用 `download-voices.cjs` 单独下载，构建不会顺手下载。
 5. 运行 `start-zh-web.ps1` 启动，需要停止时运行 `stop-zh-web.ps1`。
 6. 浏览器访问 `http://127.0.0.1:8787/`。
 
@@ -103,12 +114,21 @@
 4. 浏览器访问 `http://127.0.0.1:8790/`。
 5. 命令行英文合成可参考 `synthesize-en.ps1`，它同样依赖上述本机 runtime、模型和音色。
 
-脚本内部的具体参数以脚本和子目录 `README.zh-CN.md` 为准。本仓库上传时没有改这些业务文件。
+### 可选 Piper 普通话（8791）
+
+中文默认仍然是上面的 Kokoro。Piper 要单独安装、单独下载 `zh_CN-chaowen-medium` 和 g2pW，再启动。Linux 与 Windows 步骤、许可和测试命令见 [`piper-zh-service/README.zh-CN.md`](piper-zh-service/README.zh-CN.md)。
+
+- Piper 测试页：`http://127.0.0.1:8791/piper-compare.html`
+- 与 Kokoro 同一页对照：`http://127.0.0.1:8787/piper-compare.html`（需要先按 `zh-web-service` 的步骤构建）
+- Linux 也可以在 `zh-web-service` 里执行 `./start-zh-web.sh`。它只在缺少构建产物时调用 `build.cjs`，不会下载 Piper 模型。
+
+脚本内部的具体参数以脚本和子目录 `README.zh-CN.md` 为准。
 
 ## 明确没有上传的内容
 
 - 模型、音色权重（`.bin` / `.safetensors` / `.gguf`）、ORT wasm、Phonon `runtime` / `ptts.exe`
 - `node_modules`、虚拟环境、缓存、日志、`test-output`、试听或对比音频
 - `.env` 及密钥
-- 生成的 `zh-web-service/public/app.js`
+- 生成的 `zh-web-service/public/app.js` 和 `public/kokoro-client.js`
+- Piper 的 onnx、g2pW 和 Hugging Face 分词器缓存（`piper-zh-service/models/`）
 - Kokoro-FastAPI、chickadee 或其他未列入上面结构的项目

@@ -1,0 +1,341 @@
+/** Pure helpers for the Piper / Kokoro comparison page. No network and no model. */
+
+export const RTF_DEFINITION =
+  "RTF = 服务端整段合成耗时（秒）÷ WAV 音频时长（秒）。小于 1 表示整段合成比实时播放更快。这不是流式首音时间；接口一次返回完整 WAV，首音时间未测量。";
+
+export const FIRST_AUDIO_NOTE = "未测量。响应是整段 WAV，播放要等整段返回之后才能开始，不能把它写成流式首音。";
+
+export const PRESETS = [
+  {
+    id: "poly-bank",
+    category: "多音字",
+    label: "银行 / 行长 / 重庆",
+    text: "银行行长到了重庆。",
+  },
+  {
+    id: "poly-title",
+    category: "多音字",
+    label: "这位行长（应读 háng）",
+    text: "这位行长来了。",
+  },
+  {
+    id: "poly-grow",
+    category: "多音字",
+    label: "长",
+    text: "他长大后想长成大人。",
+  },
+  {
+    id: "poly-music",
+    category: "多音字",
+    label: "音乐",
+    text: "这首音乐很好听。",
+  },
+  {
+    id: "poly-return",
+    category: "多音字",
+    label: "还",
+    text: "钱还没还。",
+  },
+  {
+    id: "num-date",
+    category: "数字日期",
+    label: "日期时间",
+    text: "2026年11月16日12:30开会。",
+  },
+  {
+    id: "num-percent",
+    category: "数字日期",
+    label: "百分数",
+    text: "完成了98.76%。",
+  },
+  {
+    id: "num-temp",
+    category: "数字日期",
+    label: "温度",
+    text: "气温是-7°C。",
+  },
+  {
+    id: "num-money",
+    category: "金额",
+    label: "金额",
+    text: "报价是12.50元，约3.2万元。",
+  },
+  {
+    id: "mix-web",
+    category: "中英混读",
+    label: "产品名",
+    text: "请打开 WebGPU，模型是 Kokoro-82M。",
+  },
+  {
+    id: "mix-version",
+    category: "中英混读",
+    label: "版本号",
+    text: "版本号是 GPT-4o。",
+  },
+  {
+    id: "tone-boss",
+    category: "变调轻声",
+    label: "三声",
+    text: "老板很好。",
+  },
+  {
+    id: "tone-book",
+    category: "变调轻声",
+    label: "一",
+    text: "我买了一本书。",
+  },
+  {
+    id: "tone-not",
+    category: "变调轻声",
+    label: "不",
+    text: "我今天不去。",
+  },
+  {
+    id: "tone-look",
+    category: "变调轻声",
+    label: "看一看",
+    text: "看一看。",
+  },
+  {
+    id: "tone-table",
+    category: "变调轻声",
+    label: "轻声",
+    text: "这是一张桌子。好吧。",
+  },
+  {
+    id: "er-yard",
+    category: "儿化",
+    label: "小院儿",
+    text: "小院儿很安静。",
+  },
+  {
+    id: "er-flower",
+    category: "儿化",
+    label: "花儿",
+    text: "花儿开了。",
+  },
+  {
+    id: "er-daughter",
+    category: "儿化",
+    label: "女儿",
+    text: "她有一个女儿。",
+  },
+  {
+    id: "punct",
+    category: "标点",
+    label: "停顿",
+    text: "你好。你好！你好？你好，世界、朋友。",
+  },
+  {
+    id: "long",
+    category: "长文本",
+    label: "整段",
+    text: "今天下午三点，项目组在三楼会议室讨论本地语音。银行客户要听清楚日期、金额和门牌，例如2026年11月16日还款12.50元，利率大约是3.25%。请把 WebGPU 和 CPU 两条路径分开记录，不要把整段耗时说成首音时间。小院儿里很安静，桌子上有一本书。老板说今天不去现场，音乐可以先关掉。这段文字用来观察长句的整段合成耗时、音频时长和 RTF，不代表已经做过人工音质评分。",
+  },
+];
+
+export const LANGUAGE_PRESETS = {
+  zh: PRESETS,
+  en: [
+    { id: "en-hello", category: "英语", label: "短句", text: "Hello. This is the local Piper English voice." },
+    { id: "en-date", category: "英语", label: "日期", text: "The meeting is on November 16, 2026, at 12:30." },
+  ],
+  fr: [
+    { id: "fr-hello", category: "法语", label: "短句", text: "Bonjour. Ceci est la voix française locale." },
+    { id: "fr-date", category: "法语", label: "日期", text: "La réunion est le 16 novembre 2026." },
+  ],
+  ja: [
+    { id: "ja-hello", category: "日语", label: "短句", text: "こんにちは。これは日本語の試験です。" },
+  ],
+  ko: [
+    { id: "ko-hello", category: "韩语", label: "短句", text: "안녕하세요. 이것은 한국어 시험입니다." },
+  ],
+};
+
+export function presetsFor(language) {
+  return LANGUAGE_PRESETS[language] || PRESETS;
+}
+
+export function kokoroAllowedFor(language) {
+  return language === "zh";
+}
+
+export function categories() {
+  const seen = [];
+  for (const preset of PRESETS) {
+    if (!seen.includes(preset.category)) seen.push(preset.category);
+  }
+  return seen;
+}
+
+export function rtf(synthSeconds, durationSeconds) {
+  if (!Number.isFinite(synthSeconds) || synthSeconds < 0) return null;
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return null;
+  return synthSeconds / durationSeconds;
+}
+
+export function parseWavPcm16(buffer) {
+  const bytes = buffer instanceof ArrayBuffer ? new Uint8Array(buffer) : new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const ascii = (offset, length) => String.fromCharCode(...bytes.subarray(offset, offset + length));
+  if (bytes.byteLength < 44 || ascii(0, 4) !== "RIFF" || ascii(8, 4) !== "WAVE") {
+    throw new Error("返回的不是 WAV。");
+  }
+  let offset = 12;
+  let sampleRate = 0;
+  let channels = 0;
+  let bits = 0;
+  let dataOffset = -1;
+  let dataSize = 0;
+  while (offset + 8 <= bytes.byteLength) {
+    const id = ascii(offset, 4);
+    const size = view.getUint32(offset + 4, true);
+    const start = offset + 8;
+    if (start + size > bytes.byteLength) throw new Error("WAV 被截断。");
+    if (id === "fmt ") {
+      channels = view.getUint16(start + 2, true);
+      sampleRate = view.getUint32(start + 4, true);
+      bits = view.getUint16(start + 14, true);
+    } else if (id === "data") {
+      dataOffset = start;
+      dataSize = size;
+      break;
+    }
+    offset = start + size + (size % 2);
+  }
+  if (bits !== 16 || channels !== 1 || sampleRate <= 0 || dataOffset < 0 || dataSize < 2) {
+    throw new Error("只接受 16-bit 单声道 WAV。");
+  }
+  const samples = dataSize / 2;
+  let peak = 0;
+  for (let index = 0; index < samples; index += 1) {
+    peak = Math.max(peak, Math.abs(view.getInt16(dataOffset + index * 2, true)) / 32768);
+  }
+  if (peak === 0) throw new Error("WAV 是静音。");
+  return {
+    sampleRate,
+    samples,
+    durationSeconds: samples / sampleRate,
+    peak,
+  };
+}
+
+export function formatSeconds(value) {
+  return Number.isFinite(value) ? value.toFixed(3) : "—";
+}
+
+export function kokoroAvailableHere(locationLike) {
+  const port = String(locationLike.port || "");
+  const host = locationLike.hostname;
+  return (host === "127.0.0.1" || host === "localhost") && port === "8787";
+}
+
+export function isLoopbackHttp(value) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "http:") return false;
+  if (url.hostname !== "127.0.0.1" && url.hostname !== "localhost") return false;
+  if (url.username || url.password || url.search || url.hash) return false;
+  if (url.pathname !== "/" && url.pathname !== "") return false;
+  const port = Number(url.port);
+  return Number.isInteger(port) && port >= 1 && port <= 65535;
+}
+
+export const LOCAL_PIPER_8800 = "http://127.0.0.1:8800";
+
+export const LEGACY_PIPER_MESSAGE = "当前连接旧版Piper，请连接本机8800或升级服务";
+
+export function piperApiBase(locationLike, stored) {
+  const saved = String(stored || "").trim().replace(/\/$/, "");
+  if (isLoopbackHttp(saved)) return saved;
+  const host = locationLike && locationLike.hostname;
+  const port = locationLike && String(locationLike.port || "");
+  const protocol = (locationLike && locationLike.protocol) || "http:";
+  if ((host === "127.0.0.1" || host === "localhost") && port && port !== "8787") {
+    return `${protocol}//${host}:${port}`;
+  }
+  if ((host === "127.0.0.1" || host === "localhost") && port === "8787") {
+    return LOCAL_PIPER_8800;
+  }
+  return "http://127.0.0.1:8791";
+}
+
+export function piperSupportsLanguageFields(health, voicesOk) {
+  if (voicesOk !== true) return false;
+  if (!health || typeof health !== "object") return false;
+  const version = health.serviceVersion;
+  if (version == null || version === "" || version === "1.0.0") return false;
+  return true;
+}
+
+export const POCKET_VARIANT = "english_18m_2026-10";
+
+// Stems of kyutai/pocket-tts-without-voice-cloning languages/english_18m_2026-10/embeddings
+// at a7056f505a4a8ca72d8b5fb1440071d6f1a35739, matching pocket-tts 4.0.1.
+export const POCKET_VOICES = [
+  "alba",
+  "anna",
+  "azelma",
+  "bill_boerst",
+  "caro_davy",
+  "charles",
+  "cosette",
+  "daan",
+  "eponine",
+  "estelle",
+  "eve",
+  "fantine",
+  "george",
+  "giovanni",
+  "jane",
+  "javert",
+  "jean",
+  "juergen",
+  "lola",
+  "marius",
+  "mary",
+  "michael",
+  "paul",
+  "peter_yearsley",
+  "rafael",
+  "stuart_bell",
+  "vera",
+];
+
+export const POCKET_PREPARE_COMMAND = "python -m pocket_local.prepare --confirm --variant english_18m_2026-10";
+
+export const POCKET_NON_ENGLISH =
+  "Pocket 18.2M 只比较英语同文本。当前不是英语，不会把这段文字交给英语模型，也不会改用 Piper。";
+
+export function pocketCompareAllowed(language) {
+  return language === "en" || language === "english";
+}
+
+export function pocketVoiceError(language, voice, prepared) {
+  if (!pocketCompareAllowed(language)) return POCKET_NON_ENGLISH;
+  if (!POCKET_VOICES.includes(voice)) return `${voice || "这个音色"} 不是 18.2M 的内置音色。`;
+  if (prepared === false) {
+    return `${voice} 还没准备。执行 ${POCKET_PREPARE_COMMAND}。已有 hf-home 会复用，页面不会下载。`;
+  }
+  return null;
+}
+
+export function pocketRequest(text, language, voice, supportsLanguageFields) {
+  if (!supportsLanguageFields) return null;
+  if (!pocketCompareAllowed(language)) return null;
+  if (!POCKET_VOICES.includes(voice)) return null;
+  return { engine: "pocket", text, language: "english", voice, variant: POCKET_VARIANT };
+}
+
+export function ttsPayload(text, selection, supportsLanguageFields) {
+  if (!supportsLanguageFields) return null;
+  const body = { text };
+  if (selection && selection.language) body.language = selection.language;
+  if (selection && selection.voice) body.voice = selection.voice;
+  if (selection && selection.speaker != null && selection.speaker !== "") body.speaker = selection.speaker;
+  return body;
+}

@@ -1,5 +1,7 @@
 ﻿# Phonon English 本地网页服务
 
+下面是原来 Windows 本机的用法，运行时是 `ptts.exe`。Ubuntu 上不要运行这个 exe。同一套 `POST /api/tts` 在 Linux 上走官方 `ptts` 0.7.0，说明见 [`../deploy/README.zh-CN.md`](../deploy/README.zh-CN.md)。
+
 首页：http://127.0.0.1:8787/ （原中文测试页面，英文默认 Phonon）
 独立英文页：http://127.0.0.1:8790/
 试听对比：http://127.0.0.1:8790/compare.html
