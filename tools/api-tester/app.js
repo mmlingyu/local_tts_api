@@ -9,8 +9,6 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 
-document.getElementById("local-origin").textContent = location.origin;
-
 function tokenValue() {
   return $("token").value;
 }
@@ -75,17 +73,68 @@ async function proxy(method, path, query, body) {
   return payload;
 }
 
+function interpretCatalog(upstream, label) {
+  if (!upstream || upstream.parseError || !upstream.json || !Array.isArray(upstream.json.voices)) {
+    return { ok: false, error: label + " 的音色清单不是完整 JSON，不能当成 0 条成功。" };
+  }
+  if (upstream.status !== 200) {
+    return { ok: false, error: label + " HTTP " + upstream.status };
+  }
+  const rows = upstream.json.voices;
+  if (rows.length === 0) {
+    return { ok: false, error: label + " 返回了 0 条音色。这不是加载成功。" };
+  }
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    const where = label + " 第 " + (index + 1) + " 条";
+    if (!row || typeof row !== "object" || Array.isArray(row)) {
+      return { ok: false, error: where + " 不是音色对象。已停止加载，没有丢弃其余条目。" };
+    }
+    if (typeof row.voice !== "string" || !row.voice || typeof row.language !== "string" || !row.language || typeof row.locale !== "string" || !row.locale) {
+      return { ok: false, error: where + " 缺少 voice、language 或 locale。音色 id 用 voice，不能改用 id 或 name，也没有丢弃这一条。" };
+    }
+    if (row.speakers != null && (typeof row.speakers !== "object" || Array.isArray(row.speakers))) {
+      return { ok: false, error: where + " 的 speakers 不是对象。" };
+    }
+  }
+  const languages = upstream.json.languages;
+  if (languages != null) {
+    if (!Array.isArray(languages)) {
+      return { ok: false, error: label + " 的 languages 不是数组。" };
+    }
+    for (let index = 0; index < languages.length; index += 1) {
+      const item = languages[index];
+      if (!item || !Array.isArray(item.voices) || item.voices.some((id) => typeof id !== "string")) {
+        return { ok: false, error: label + " 的 languages[" + index + "].voices 必须是字符串 id，不能当成音色对象。" };
+      }
+    }
+  }
+  return { ok: true, rows };
+}
+
+function groupsFor(rows) {
+  const groups = [];
+  rows.forEach((row) => {
+    const key = row.language + "\n" + row.locale;
+    let group = null;
+    for (let index = 0; index < groups.length; index += 1) {
+      if (groups[index].key === key) group = groups[index];
+    }
+    if (!group) {
+      group = { key, label: row.language + " · " + row.locale, rows: [] };
+      groups.push(group);
+    }
+    group.rows.push(row);
+  });
+  return groups;
+}
+
 function fillLanguages() {
   const engine = $("engine").value;
   const language = $("language");
   language.replaceChildren();
-  const rows = engine === "phonon" ? state.phonon : state.piper;
-  const languages = [];
-  rows.forEach((row) => {
-    const name = row.language;
-    if (name && !languages.includes(name)) languages.push(name);
-  });
-  if (!languages.length) {
+  const groups = groupsFor(engine === "phonon" ? state.phonon : state.piper);
+  if (!groups.length) {
     const option = document.createElement("option");
     option.value = "";
     option.textContent = "请先加载音色";
@@ -93,23 +142,24 @@ function fillLanguages() {
     fillVoices();
     return;
   }
-  languages.forEach((name) => {
+  groups.forEach((group) => {
     const option = document.createElement("option");
-    option.value = name;
-    option.textContent = name;
+    option.value = group.key;
+    option.textContent = group.label;
     language.append(option);
   });
-  if (engine === "piper" && languages.includes("zh")) language.value = "zh";
-  if (engine === "phonon" && languages.includes("en")) language.value = "en";
+  const preferred = engine === "phonon" ? "en\nen" : "zh\nzh_CN";
+  if ([...language.options].some((option) => option.value === preferred)) language.value = preferred;
   fillVoices();
 }
 
 function fillVoices() {
   const engine = $("engine").value;
-  const language = $("language").value;
+  const selected = $("language").value;
   const voice = $("voice");
   voice.replaceChildren();
-  const rows = (engine === "phonon" ? state.phonon : state.piper).filter((row) => !language || row.language === language);
+  const group = groupsFor(engine === "phonon" ? state.phonon : state.piper).find((item) => item.key === selected);
+  const rows = group ? group.rows : [];
   if (!rows.length) {
     const option = document.createElement("option");
     option.value = "";
@@ -120,8 +170,8 @@ function fillVoices() {
   }
   rows.forEach((row) => {
     const option = document.createElement("option");
-    option.value = engine === "phonon" ? row.voice || row.name || row.id : row.voice;
-    option.textContent = engine === "phonon" ? (row.label || row.voice) : row.voice;
+    option.value = row.voice;
+    option.textContent = typeof row.label === "string" && row.label ? row.label : row.voice;
     option.dataset.raw = JSON.stringify(row);
     voice.append(option);
   });
@@ -170,7 +220,7 @@ function payloadFromForm() {
   const voice = $("voice").value;
   if (!voice) throw new Error("请先加载并选择音色。");
   const body = { engine, text, voice };
-  if (engine === "piper") body.language = $("language").value;
+  if (engine === "piper") body.language = $("language").value.split("\n")[0];
   if (engine === "phonon") body.language = "en";
   if (! $("speaker-label").hidden) body.speaker = $("speaker").value;
   return body;
@@ -192,9 +242,12 @@ async function checkHealth() {
   const upstream = await proxy("GET", "/api/health", null, null);
   showDetail(upstream);
   $("metric-status").textContent = String(upstream.status);
-  if (upstream.status === 200) {
+  if (upstream.status === 200 && upstream.json && !upstream.parseError) {
     $("connection-state").textContent = "健康检查已返回";
     setBanner("ok", "已收到健康检查。Phonon 的 inferenceReady 为 false 只表示进程没有常驻。");
+  } else if (upstream.parseError || (upstream.status === 200 && !upstream.json)) {
+    $("connection-state").textContent = "健康检查正文无法解析";
+    setBanner("bad", "健康检查的 HTTP 状态是 " + upstream.status + "，但正文不是完整 JSON。没有把它当成连接成功。");
   } else {
     $("connection-state").textContent = "健康检查未成功";
     setBanner(upstream.status === 401 || upstream.status === 403 ? "bad" : "warn", statusHint(upstream.status) || ("HTTP " + upstream.status));
@@ -205,13 +258,15 @@ async function loadVoices() {
   setBanner("", "");
   const piper = await proxy("GET", "/api/voices", null, null);
   const phonon = await proxy("GET", "/api/voices", { engine: "phonon" }, null);
-  if (piper.status !== 200 || phonon.status !== 200) {
+  const piperRows = interpretCatalog(piper, "Piper");
+  const phononRows = interpretCatalog(phonon, "Phonon");
+  if (!piperRows.ok || !phononRows.ok) {
     showDetail({ piper, phonon });
-    setBanner("bad", statusHint(piper.status) || statusHint(phonon.status) || "音色清单没有成功返回。");
+    setBanner("bad", !piperRows.ok ? piperRows.error : phononRows.error);
     return;
   }
-  state.piper = piper.json && piper.json.voices ? piper.json.voices : [];
-  state.phonon = phonon.json && phonon.json.voices ? phonon.json.voices : [];
+  state.piper = piperRows.rows;
+  state.phonon = phononRows.rows;
   fillLanguages();
   showDetail({ piperCount: state.piper.length, phononCount: state.phonon.length });
   setBanner("ok", "已加载 Piper " + state.piper.length + " 条、Phonon " + state.phonon.length + " 条。");
@@ -271,6 +326,8 @@ async function speak() {
   }
 }
 
+if (typeof document !== "undefined") {
+document.getElementById("local-origin").textContent = location.origin;
 $("toggle-token").addEventListener("click", () => {
   const input = $("token");
   const show = input.type === "password";
@@ -308,6 +365,11 @@ $("download").addEventListener("click", () => {
   link.download = state.downloadName;
   link.click();
 });
-window.addEventListener("pagehide", releaseAudio);
-fillLanguages();
-updateCounter();
+  window.addEventListener("pagehide", releaseAudio);
+  fillLanguages();
+  updateCounter();
+}
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { interpretCatalog, groupsFor };
+}

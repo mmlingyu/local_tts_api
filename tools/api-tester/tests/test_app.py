@@ -59,6 +59,55 @@ def test_ssl_context_verifies_certificates():
     assert "check_hostname = False" not in source
 
 
+FIXTURE = Path(__file__).resolve().parent / "fixtures" / "piper-voices-response.json"
+
+
+def test_production_piper_body_is_not_truncated_before_parse():
+    raw = FIXTURE.read_bytes()
+    assert len(raw) > 8000
+    packaged = tester._package(200, {"Content-Type": "application/json; charset=utf-8"}, raw, "good-token")
+    assert packaged["parseError"] is False
+    assert packaged["ok"] is True
+    assert len(packaged["json"]["voices"]) == 8
+    assert packaged["json"]["voices"][0]["voice"] == "zh_CN-chaowen-medium"
+    assert "id" not in packaged["json"]["voices"][0]
+    assert all(isinstance(item, str) for item in packaged["json"]["languages"][0]["voices"])
+    assert len(packaged["json"]["languages"]) == 5
+    truncated = tester._package(200, {"Content-Type": "application/json"}, raw[:8000], "")
+    assert truncated["parseError"] is True
+    assert truncated["json"] is None
+    assert truncated["ok"] is False
+
+
+def test_page_catalog_uses_voice_field_and_rejects_empty_or_invalid():
+    script = r"""
+const { interpretCatalog, groupsFor } = require("./app.js");
+const data = require("./tests/fixtures/piper-voices-response.json");
+const loaded = interpretCatalog({ status: 200, json: data, parseError: false }, "Piper");
+if (!loaded.ok || loaded.rows.length !== 8) process.exit(2);
+const groups = groupsFor(loaded.rows);
+if (groups.map((group) => group.label).join(",") !== "zh · zh_CN,en · en_US,fr · fr_FR,ja · ja_JP,ko · ko_KR") process.exit(3);
+const japanese = loaded.rows.find((row) => row.voice === "ja_JP-hi_fi_captain-medium");
+if (!japanese || japanese.speakers.female !== 0 || japanese.speakers.male !== 1) process.exit(4);
+const empty = interpretCatalog({ status: 200, json: { voices: [] }, parseError: false }, "Piper");
+if (empty.ok || !empty.error.includes("0 条") || empty.error.includes("已加载")) process.exit(5);
+const missingVoice = interpretCatalog({
+  status: 200,
+  json: { voices: [{ id: "x", name: "x", language: "en", locale: "en_US" }] },
+  parseError: false,
+}, "Piper");
+if (missingVoice.ok) process.exit(6);
+const badLanguages = interpretCatalog({
+  status: 200,
+  json: { voices: data.voices, languages: [{ voices: [{ voice: "zh_CN-chaowen-medium" }] }] },
+  parseError: false,
+}, "Piper");
+if (badLanguages.ok) process.exit(7);
+"""
+    completed = subprocess.run(["node", "-e", script], cwd=ROOT, capture_output=True, text=True)
+    assert completed.returncode == 0, completed.stderr
+
+
 def test_page_has_empty_token_and_no_storage():
     html = (ROOT / "index.html").read_text(encoding="utf-8")
     script = (ROOT / "app.js").read_text(encoding="utf-8")
@@ -93,6 +142,38 @@ class Upstream(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         Upstream.hits += 1
         auth = self.headers.get("Authorization", "")
+        if self.path.startswith("/api/voices"):
+            fixture = Path(__file__).resolve().parent / "fixtures" / "piper-voices-response.json"
+            if "engine=phonon" in self.path:
+                manifest = json.loads((Path(__file__).resolve().parents[3] / "phonon" / "voices" / "manifest.json").read_text(encoding="utf-8"))
+                voices = [{
+                    "id": "default",
+                    "voice": "default",
+                    "name": "default",
+                    "label": "默认 · default",
+                    "locale": "en",
+                    "gender": None,
+                    "language": "en",
+                    "present": True,
+                    "official": True,
+                }]
+                for row in manifest["voices"]:
+                    voices.append({
+                        "id": row["id"],
+                        "voice": row["name"],
+                        "name": row["name"],
+                        "label": row["label"],
+                        "locale": row["locale"],
+                        "gender": row["gender"],
+                        "language": "en",
+                        "present": True,
+                        "official": True,
+                    })
+                body = json.dumps({"engine": "phonon", "count": len(voices), "voices": voices}, ensure_ascii=False).encode("utf-8")
+            else:
+                body = fixture.read_bytes()
+            self._send(200, body, "application/json; charset=utf-8")
+            return
         if self.path.startswith("/api/health"):
             if Upstream.redirect:
                 self.send_response(302)
@@ -195,6 +276,32 @@ def test_cross_site_origin_and_bad_host_are_rejected(servers):
     )
     assert status == 403
     assert "x" not in body["error"]
+
+
+def test_real_piper_fixture_and_phonon_catalog_round_trip(servers):
+    upstream, proxy = servers
+    base = f"http://127.0.0.1:{upstream.server_address[1]}"
+    status, body = _post(proxy, {"base": base, "token": "good-token", "method": "GET", "path": "/api/voices"})
+    assert status == 200
+    assert body["parseError"] is False
+    assert [item["voice"] for item in body["json"]["voices"]] == [
+        "zh_CN-chaowen-medium",
+        "zh_CN-xiao_ya-medium",
+        "en_US-joe-medium",
+        "en_US-ljspeech-medium",
+        "en_US-norman-medium",
+        "fr_FR-siwis-medium",
+        "ja_JP-hi_fi_captain-medium",
+        "ko_KR-kss-medium",
+    ]
+    status, phonon = _post(
+        proxy,
+        {"base": base, "token": "good-token", "method": "GET", "path": "/api/voices", "query": {"engine": "phonon"}},
+    )
+    assert phonon["parseError"] is False
+    assert phonon["json"]["count"] == 38
+    assert phonon["json"]["voices"][1]["voice"] == "Zoey"
+    assert "good-token" not in json.dumps(body) and "good-token" not in json.dumps(phonon)
 
 
 def test_tts_returns_wav_metadata(servers):

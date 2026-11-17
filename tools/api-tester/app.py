@@ -161,20 +161,23 @@ def _package(status: int, headers, raw: bytes, token: str) -> dict:
             "json": None,
             "errorText": None,
         }
-    text = redact(raw.decode("utf-8", errors="replace"), token)[:8000]
+    text = redact(raw.decode("utf-8", errors="replace"), token)
     parsed = None
+    parse_error = False
     try:
         parsed = json.loads(text)
     except json.JSONDecodeError:
         parsed = None
+        parse_error = True
     return {
-        "ok": 200 <= status < 300,
+        "ok": 200 <= status < 300 and not parse_error,
         "status": status,
         "contentType": content_type,
         "headers": picked,
         "bodyBase64": None,
         "json": parsed,
-        "errorText": None if parsed is not None else text,
+        "parseError": parse_error,
+        "errorText": None if parsed is not None else text[:8000],
     }
 
 

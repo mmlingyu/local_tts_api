@@ -164,7 +164,7 @@ Windows、Linux 和 macOS 都用主目录，不要写死用户名。文件权限
 }
 ```
 
-上面的空数组只说明形状。线上的 `voices` 有 8 条，`languages` 有 zh、en、ja、ko、fr。每条音色的稳定字段包括 `voice`、`language`、`locale`、`phonemeType`、`sampleRate`、`numSpeakers`、`speakers`、`defaultSpeakerId`、`defaultForLanguage`、`datasetLicense`、`datasetUrl`、`commercialNote`、`gender`、`genderSource`、`licenseClass`、`downloaded`、`frontendReady`。`pronunciationReviewed` 固定 `false`。`sampleRate` 八条都是 22050。
+上面的空数组只说明有哪些键，不是一份真实响应。已核对的生产 `GET /api/voices`（HTTP 200，不含令牌）里，顶层 `voices` 是 8 个对象，音色 id 在 `voice`，不是 `id` 或 `name`。`languages` 是 5 个对象，它们的 `voices` 是字符串 id 数组，不能当成音色对象来读。这份正文约 10 KB。调用方必须读完再解析，不能先截断再当 JSON。每条音色对象还有 `language`、`locale`、`phonemeType`、`sampleRate`、`numSpeakers`、`speakers`、`defaultSpeakerId`、`defaultForLanguage`、`datasetLicense`、`commercialNote`、`gender`、`licenseClass`。日语对象的 `speakers` 是 `{"female": 0, "male": 1}`。`pronunciationReviewed` 固定 `false`。`sampleRate` 八条都是 22050。
 
 `?engine=phonon` 返回 `engine`、`repo`、`revision`、`count`、`presentCount`、`voices`、`modelReady`、`runtimeAuthentic`、`inferenceReady`。`count` 为 38：`default` 再加清单里的 37 个。`inferenceReady` 固定 `false`，理由见上一节。每条有 `id`、`voice`、`name`、`label`、`locale`、`gender`、`language`、`present`、`official`。没有文件路径，也没有下载地址。`repo` 是 `gradium/phonon-voices`，`revision` 是 `0ee17205f254b5abc43b266c8a0f215565c352f7`。
 
