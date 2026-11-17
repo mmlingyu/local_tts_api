@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hmac
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -32,20 +33,32 @@ SYNTH_TIMEOUT_SECONDS = 180
 
 
 class ServiceState:
-    def __init__(self, engine, port: int, pocket=None) -> None:
+    def __init__(self, engine, port: int, pocket=None, phonon=None, api_token: str = "", extra_origins: str = "") -> None:
         self.engine = engine
         self.port = port
         self.pocket = pocket
+        self.phonon = phonon
+        self.api_token = api_token.strip()
+        self.extra_origins = extra_origins
         self._lock = threading.Lock()
         self.busy = False
 
     def origins(self) -> set[str]:
-        return {
+        found = {
             f"http://127.0.0.1:{self.port}",
             f"http://localhost:{self.port}",
             "http://127.0.0.1:8787",
             "http://localhost:8787",
+            "http://127.0.0.1:8133",
+            "http://localhost:8133",
         }
+        for item in self.extra_origins.split(","):
+            origin = item.strip()
+            if not origin or origin in {"*", "null"} or "*" in origin:
+                continue
+            if origin.startswith(("http://", "https://")) and "\n" not in origin:
+                found.add(origin)
+        return found
 
     def try_begin(self) -> bool:
         with self._lock:
@@ -89,7 +102,7 @@ def make_handler(state: ServiceState) -> type[BaseHTTPRequestHandler]:
                 self.send_header("Vary", "Origin")
                 self.send_header(
                     "Access-Control-Expose-Headers",
-                    "X-Audio-Duration, X-Synth-Seconds, X-RTF, X-Sample-Rate, X-Engine, X-Model, X-Phoneme-Type, X-Streaming, X-Language, X-Voice, X-Speaker-Id",
+                    "X-Audio-Duration, X-Synth-Seconds, X-RTF, X-Audio-Peak, X-Sample-Rate, X-Engine, X-Model, X-Phoneme-Type, X-Streaming, X-Language, X-Voice, X-Voice-ID, X-Speaker-Id",
                 )
             if extra:
                 for key, value in extra.items():
@@ -106,7 +119,7 @@ def make_handler(state: ServiceState) -> type[BaseHTTPRequestHandler]:
                 extra,
             )
 
-        def _guard(self) -> bool:
+        def _guard(self, require_token: bool = True) -> bool:
             host = self.headers.get("Host", "")
             allowed = {f"127.0.0.1:{state.port}", f"localhost:{state.port}"}
             if host not in allowed:
@@ -116,10 +129,21 @@ def make_handler(state: ServiceState) -> type[BaseHTTPRequestHandler]:
             if origin is not None and origin not in state.origins():
                 self._json(403, {"error": "这个来源不能调用 Piper 服务。"})
                 return False
+            if require_token and state.api_token and not self._bearer_ok():
+                self._json(401, {"error": "需要 Bearer token。Host 和来源检查仍然有效。", "code": "unauthorized"})
+                return False
             return True
 
+        def _bearer_ok(self) -> bool:
+            try:
+                presented = self.headers.get("Authorization", "").encode("utf-8")
+                expected = f"Bearer {state.api_token}".encode("utf-8")
+            except UnicodeError:
+                return False
+            return hmac.compare_digest(presented, expected)
+
         def do_OPTIONS(self) -> None:  # noqa: N802
-            if not self._guard():
+            if not self._guard(require_token=False):
                 return
             path = urlparse(self.path).path
             if path not in {"/api/tts", "/api/health", "/api/voices"}:
@@ -131,7 +155,7 @@ def make_handler(state: ServiceState) -> type[BaseHTTPRequestHandler]:
                 self.send_header("Access-Control-Allow-Origin", origin)
                 self.send_header("Vary", "Origin")
                 self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-                self.send_header("Access-Control-Allow-Headers", "Content-Type")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
                 self.send_header("Access-Control-Max-Age", "600")
             self.send_header("Content-Length", "0")
             self.send_header("Cross-Origin-Resource-Policy", "cross-origin")
@@ -149,12 +173,22 @@ def make_handler(state: ServiceState) -> type[BaseHTTPRequestHandler]:
                 payload["busy"] = state.busy
                 payload["port"] = state.port
                 pocket_status = state.pocket.status() if state.pocket is not None else {"installed": False}
+                phonon_status = state.phonon.status() if state.phonon is not None else {"runtimePresent": False, "inferenceReady": False}
+                payload["apiVersion"] = "1.2.0"
                 payload["engines"] = {
                     "piper": {
                         "serviceVersion": payload.get("serviceVersion"),
                         "modelReady": payload.get("modelReady"),
+                        "loadedVoiceIds": payload.get("loadedVoiceIds", []),
                     },
                     "pocket": pocket_status,
+                    "phonon": phonon_status,
+                }
+                payload["access"] = {
+                    "bind": "loopback",
+                    "authorization": "bearer" if state.api_token else "loopback-only",
+                    "tokenConfigured": bool(state.api_token),
+                    "origins": sorted(state.origins()),
                 }
                 self._json(200, payload)
                 return
@@ -166,8 +200,28 @@ def make_handler(state: ServiceState) -> type[BaseHTTPRequestHandler]:
                         return
                     self._json(200, state.pocket.voices())
                     return
+                if asked == "phonon":
+                    if state.phonon is None:
+                        self._json(200, {"engine": "phonon", "voices": [], "count": 0, "runtimePresent": False})
+                        return
+                    self._json(200, state.phonon.voices())
+                    return
+                if asked == "all":
+                    piper_status = state.engine.status()
+                    self._json(
+                        200,
+                        {
+                            "piper": {
+                                "voices": piper_status.get("voices") or inventory(),
+                                "languages": piper_status.get("languages") or language_rows(),
+                            },
+                            "pocket": state.pocket.voices() if state.pocket is not None else {"engine": "pocket", "voices": []},
+                            "phonon": state.phonon.voices() if state.phonon is not None else {"engine": "phonon", "voices": []},
+                        },
+                    )
+                    return
                 if asked != "piper":
-                    self._json(400, {"error": "engine 只能是 piper 或 pocket。", "code": "bad_engine"})
+                    self._json(400, {"error": "engine 只能是 piper、phonon、pocket 或 all。", "code": "bad_engine"})
                     return
                 status_payload = state.engine.status()
                 voices = status_payload.get("voices")
@@ -235,10 +289,15 @@ def make_handler(state: ServiceState) -> type[BaseHTTPRequestHandler]:
 
             def work() -> None:
                 try:
+                    _release_other_engines(state, request.engine)
                     if request.engine == "pocket":
                         if state.pocket is None:
                             raise RequestError("Pocket 没有接入这个进程。", 503, "pocket_not_ready")
                         holder["result"] = state.pocket.synthesize(text, language, voice, request.variant)
+                    elif request.engine == "phonon":
+                        if state.phonon is None:
+                            raise RequestError("Phonon 没有接入这个进程。", 503, "runtime_not_ready")
+                        holder["result"] = state.phonon.synthesize(text, voice)
                     else:
                         holder["result"] = state.engine.synthesize(
                             text, language=language, voice=voice, speaker=speaker
@@ -283,14 +342,46 @@ def make_handler(state: ServiceState) -> type[BaseHTTPRequestHandler]:
             speaker_header = getattr(result, "speaker_id", speaker)
             if speaker_header is not None:
                 extra["X-Speaker-Id"] = str(speaker_header)
+            peak = getattr(result, "peak", None)
+            if peak is not None:
+                extra["X-Audio-Peak"] = f"{peak:.9f}"
+            voice_id = getattr(result, "voice_id", None)
+            if voice_id:
+                extra["X-Voice-ID"] = voice_id
             self._send(200, result.wav, "audio/wav", extra)
 
     return Handler
 
 
-def create_server(engine, host: str = "127.0.0.1", port: int = 8791, pocket=None) -> ThreadingHTTPServer:
+def _release_other_engines(state: ServiceState, active: str) -> None:
+    """Keep only the engine that is about to run. The 3.6GiB host cannot hold all three."""
+    if active != "piper":
+        release = getattr(state.engine, "release_all", None)
+        if release is not None:
+            release()
+    if active != "pocket" and state.pocket is not None:
+        close = getattr(state.pocket, "close", None)
+        if close is not None:
+            close()
+    if active != "phonon" and state.phonon is not None:
+        close = getattr(state.phonon, "close", None)
+        if close is not None:
+            close()
+
+
+def create_server(
+    engine,
+    host: str = "127.0.0.1",
+    port: int = 8791,
+    pocket=None,
+    phonon=None,
+    api_token: str = "",
+    extra_origins: str = "",
+) -> ThreadingHTTPServer:
     if host not in {"127.0.0.1", "localhost"}:
         raise ValueError("Piper 服务只能绑定回环地址。")
+    if port in {80, 443, 3080, 8080}:
+        raise ValueError(f"端口 {port} 留给已有服务。")
     state_port = port
     handler = make_handler  # assigned after we know the real port when port is 0
 
@@ -306,16 +397,31 @@ def create_server(engine, host: str = "127.0.0.1", port: int = 8791, pocket=None
     httpd.state = httpd.RequestHandlerClass  # type: ignore[attr-defined]
     # The handler closes over the ServiceState instance created above. Rebuild
     # so Host checks and CORS use the port the OS actually assigned.
-    if pocket is None:
-        import sys
+    import sys
 
-        pocket_root = Path(__file__).resolve().parents[2] / "pocket-tts-service"
-        if str(pocket_root) not in sys.path:
-            sys.path.insert(0, str(pocket_root))
+    repo_root = Path(__file__).resolve().parents[2]
+    pocket_root = repo_root / "pocket-tts-service"
+    phonon_root = repo_root / "phonon"
+    if str(pocket_root) not in sys.path:
+        sys.path.insert(0, str(pocket_root))
+    if str(phonon_root) not in sys.path:
+        sys.path.insert(0, str(phonon_root))
+    if pocket is None:
         from pocket_local.bridge import PocketBridge
 
         pocket = PocketBridge()
-    bound = ServiceState(engine, actual_port, pocket=pocket)
+    if phonon is None:
+        from phonon_bridge import PhononBridge
+
+        phonon = PhononBridge()
+    bound = ServiceState(
+        engine,
+        actual_port,
+        pocket=pocket,
+        phonon=phonon,
+        api_token=api_token,
+        extra_origins=extra_origins,
+    )
     httpd.RequestHandlerClass = make_handler(bound)
     httpd.service_state = bound  # type: ignore[attr-defined]
     return httpd
@@ -334,8 +440,33 @@ def main(argv: list[str] | None = None) -> int:
     if args.host not in {"127.0.0.1", "localhost"}:
         print("拒绝绑定非回环地址。")
         return 2
+    if args.port in {80, 443, 3080, 8080}:
+        print("拒绝占用 80、443、3080 或 8080。这些端口留给已有服务。")
+        return 2
     if args.model.name != DEFAULT_MODEL.name:
         print("拒绝加载白名单以外的模型文件名。")
+        return 2
+    import os
+    import sys
+
+    token = os.environ.get("TTS_API_TOKEN", "")
+    extra_origins = os.environ.get("TTS_EXTRA_ORIGINS", "")
+    public_base = os.environ.get("TTS_PUBLIC_BASE", "")
+    deploy_root = Path(__file__).resolve().parents[2] / "deploy"
+    if str(deploy_root) not in sys.path:
+        sys.path.insert(0, str(deploy_root))
+    from access_policy import AccessConfigError, compile_access
+
+    try:
+        compile_access(
+            bind_host=args.host,
+            port=args.port,
+            extra_origins=extra_origins,
+            api_token=token,
+            public_base=public_base,
+        )
+    except AccessConfigError as exc:
+        print(str(exc))
         return 2
     engine = VoicePool(
         device=args.device,
@@ -345,7 +476,13 @@ def main(argv: list[str] | None = None) -> int:
         chinese_model=args.model,
     )
     print(json.dumps({"modelReady": engine.status()["modelReady"], "loadedVoiceIds": [], "device": engine.device, "cacheLimit": engine.cache_limit}, ensure_ascii=False))
-    httpd = create_server(engine, args.host, args.port)
+    httpd = create_server(
+        engine,
+        args.host,
+        args.port,
+        api_token=token,
+        extra_origins=extra_origins,
+    )
     port = httpd.service_state.port  # type: ignore[attr-defined]
     state_path = Path(__file__).resolve().parents[1] / "service-state.json"
     state_path.write_text(
@@ -368,6 +505,8 @@ def main(argv: list[str] | None = None) -> int:
         pocket_worker = getattr(httpd, "service_state", None)
         if pocket_worker is not None and getattr(pocket_worker, "pocket", None) is not None:
             pocket_worker.pocket.close()
+        if pocket_worker is not None and getattr(pocket_worker, "phonon", None) is not None:
+            pocket_worker.phonon.close()
         httpd.server_close()
     return 0
 

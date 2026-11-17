@@ -2,17 +2,13 @@
 
 这份说明只记录已经核对过的事实，以及还不能做的事。它不是一次成功的部署。
 
-## 还没完成
+## 覆盖层
 
-`D:\aispace\local_tts_api\piper-zh-service\piper_zh\server.py` 有一份未提交的本地改动。拷贝被本机执行根目录限制拦住了，没有用别的办法把文件内容转写过来。
+用户附上的 `server.py` 是 16630 字节。和仓库版本相比，唯一的功能差别是 CORS 多允许了 `http://127.0.0.1:8133` 和 `http://localhost:8133`。这两条已经保留。Host 仍然只接受本进程的回环名，来源不在名单里仍然是 403。
 
-因此：
+`POST /api/tts` 现在接受 `engine` 为 `piper`、`phonon` 或 `pocket`。省略时仍是 Piper 中文。Phonon 在模型或官方运行时不齐时返回 JSON 503，不会返回伪造的 WAV。
 
-- 仓库里的 `piper-zh-service/piper_zh/server.py` 仍是提交 `dfb62eb` 里的版本，后面的 `c7517cb` 只加了文档，没有改这个文件。
-- **不能说用户的本地改动已经保留。** 覆盖层还没到，也就还没有对账。
-- 没有改 `server.py`。`POST /api/tts` 现在仍只接受 `engine` 为 `piper` 或 `pocket`。传 `phonon` 会是 HTTP 400，`code` 为 `bad_engine`。
-- 没有在目标机器上安装 systemd，没有启动服务，没有改 3080 或 8080 上已有的 DeepSeek 和 Caddy。
-- 没有模型文件，所以没有做过任何一次真实合成，也不能把健康检查说成推理就绪。
+没有在目标机器上安装 systemd，没有启动服务，没有改 3080 或 8080。安装脚本可以在那台机器上由操作员执行。
 
 第三方现在能依赖的请求行为仍以 [`docs/API-INTEGRATION.zh-CN.md`](../docs/API-INTEGRATION.zh-CN.md) 为准。
 
@@ -77,7 +73,7 @@ PY
 
 `applied` 为 false 是因为 `plan` 不改文件。确认每条都能在缓存里找到唯一 blob 之后，再由操作员显式调用 `apply_plan`。这个工具不下载，也不删除 blob。
 
-Piper 仍最多在内存里留 2 个音色。Pocket worker 由现有桥接按需拉起，失败后关掉。Phonon 官方命令是每次起一个进程；HTTP 接上之后也应一次只跑一个引擎，请求结束就退出 `ptts`，不要和 Piper、Pocket 的权重同时留在内存里。这些卸载策略还没有接到 `server.py`，所以现在的进程行为没有变。
+Piper 最多在内存里留 2 个音色。开始 Pocket 或 Phonon 之前会丢掉已加载的 Piper 音色。开始 Piper 或 Phonon 之前会关掉 Pocket worker。Phonon 每次请求单独起 `ptts`，写完 WAV 就退出。三个引擎共用原来的忙锁，同时只跑一段。
 
 目标机大约 3.6GiB 内存。草稿单元把 `MemoryMax` 写成 2G，是为了给已经在跑的服务留余量，不是测得的峰值。4 个 vCPU 上 Phonon 线程默认收成 2，请求不能改。
 
@@ -85,17 +81,40 @@ Piper 仍最多在内存里留 2 个音色。Pocket worker 由现有桥接按需
 
 进程继续只绑定 `127.0.0.1` 或 `localhost`。Host 仍只接受这个端口的回环名。不要把绑定改成 `0.0.0.0`，不要把 CORS 改成 `*`，也不要靠删掉检查来对外开放。
 
-`deploy/access_policy.py` 写了以后要用的规则：对外基址必须配至少 16 个字符的 token；额外来源逐条填写，例如以后若要保留用户机器上的 8133，把它写进 `TTS_EXTRA_ORIGINS`，而不是现在就默认放开。**`server.py` 还没有 import 这个模块，所以当前进程不会执行这些新规则。** 现有 8787 和本进程来源的行为没有被这段草稿改变。
+`deploy/access_policy.py` 已由启动时调用。对外基址必须配至少 16 个字符的 token。8133 和 8787 是内置来源，不需要再写进 `TTS_EXTRA_ORIGINS`。`TTS_API_TOKEN` 为空时，本机不带 `Authorization` 的程序仍可调用，Host 和 CORS 照常检查。token 一旦写上，请求必须带 `Authorization: Bearer ...`，错误 token 是 401，这不会放过来源或 Host。预检 `OPTIONS` 不要求 token，否则浏览器发不出真正的请求。
 
 不要占用 3080 和 8080。示例端口仍是 8800，因为那是已经部署过的统一 Piper/Pocket 端口；源码默认仍是 8791。这台开发虚拟机没有替目标机选择最终端口。
 
 ## 安装和回滚
 
-`deploy/install-draft.sh` 只打印步骤，不复制单元、不启动进程。
+先在目标机上检查 CPU。缺 AVX2、FMA 或 F16C 时退出码是 2，不要继续装 Phonon 的官方二进制：
 
-`deploy/rollback-local-tts.sh` 默认也是演练。加上 `--apply` 时只处理 `local-tts-api.service`：`disable --now`，若有 `/var/backups/local-tts-api.service.prev` 就放回去，否则删除这个单元文件。它不接受别的参数，不删除模型，也不停止其他服务。这次没有执行 `--apply`。
+```bash
+TTS_PORT=8800 python3 deploy/check-host.py
+deploy/install-local-tts.sh --check
+```
 
-`deploy/local-tts-api.service` 是草稿。它的 `ExecStart` 仍是现在的 `python -m piper_zh`，也就是还没有 `engine=phonon` 的那个进程。不要 enable。
+不需要 root 的预演，会把代码复制到一个目录并写出单元文件，不调用服务管理器：
+
+```bash
+deploy/install-local-tts.sh --render /tmp/local-tts-render --port 8800
+```
+
+在目标机上安装。这一步要 root。它只写入 `local-tts-api.service`，先把已有单元备份到 `/var/backups/local-tts-api.service.prev`，然后 `daemon-reload`，不 enable，也不启动：
+
+```bash
+sudo TTS_PORT=8800 deploy/install-local-tts.sh --apply --port 8800
+```
+
+模型、两个虚拟环境和官方 `ptts` 就位之后再启动：
+
+```bash
+sudo systemctl enable --now local-tts-api.service
+```
+
+`deploy/rollback-local-tts.sh` 默认是演练。`--apply` 只 `disable --now local-tts-api.service`，有备份就放回去，没有就删这个单元文件。不删除模型，不停止其他服务。不要对它传别的参数。
+
+`deploy/install-draft.sh` 只保留成一句指针。真正的安装脚本是 `deploy/install-local-tts.sh`。
 
 ## 接口示例
 
@@ -109,10 +128,25 @@ Piper 仍最多在内存里留 2 个音色。Pocket worker 由现有桥接按需
 {"engine":"pocket","text":"Hello.","language":"en","voice":"alba"}
 ```
 
-Phonon 接上之后，计划中的请求仍使用白名单里的名字或 ID，不接受路径：
+Phonon 使用清单里的名字或 ID，不接受路径：
 
 ```json
 {"engine":"phonon","text":"Hello.","voice":"Zoey"}
 ```
 
-这条在覆盖层对账并改完路由之前会返回 400。不要把它写成已经可用。成功时仍应是整段 `audio/wav`，失败时仍是 JSON。Phonon 旧的 Windows 页另外还有 `X-Audio-Peak` 和 `X-Voice-ID`；并入同一端口时要沿用那些头，而不是另造一种成功正文。这一步还没做。
+模型或官方运行时不在时，这一条是 JSON 503，不是 WAV。运行时和模型都在、并且 `ptts` 成功写出 16-bit 单声道 WAV 时，正文才是 `audio/wav`，并带 `X-Engine: Phonon-English`、`X-Voice`、`X-Voice-ID`、`X-Audio-Peak`。
+
+## 2026-11-17 在开发虚拟机上的实测
+
+这台机器不是目标机。`deploy/check-host.py` 读到 4 个逻辑 CPU、glibc 2.39、AVX2/FMA/F16C 都在、MemTotal 16387328 KiB、SwapTotal 0。3080 和 8080 没有在监听。目标机仍要在部署前再跑一次这个检查，缺任意一个 CPU 标志就不要装官方 `ptts`。
+
+Phonon 用的是上面那个已核对 SHA256 的 `ptts`，加上临时下载的 `gradium/phonon-31m-en@92741c5b07d085ff840e26fea8ce43110b87852f`，没有提交进 git：
+
+| 文件 | 字节 | SHA256 |
+| --- | --- | --- |
+| config.json | 4634 | `b5d0f88353638370d94035b7d73d7d6577c0554d78f8d7ecfd40490aae39ae85` |
+| tokenizer.json | 277967 | `691a00068fa7b989f2f3e5ae5daa2d1a5bb319f2d5360deafcfb19a8bb6e7936` |
+| model.q8.gguf | 64512352 | `a7d9aad2cd6dc66473f24a08bc6d2939030ef4d751ef82349361fbef3272dbae` |
+| default-voice.safetensors | 256136 | `dc537478eaadc1a5257fcda2e3501ab81e14c111a5d95a5838f350db2afd0f1a` |
+
+`Hello.`、`default`、`--device cpu --quant q8 --threads 2` 得到 24000 Hz、16-bit 单声道 WAV，61484 字节，时长 1.28 秒，峰值约 0.296。`ptts` 的 VmHWM 是 230764 KiB。进程退出后 `inferenceReady` 仍是 false，`resident` 是 false。同一段文本再经 `POST /api/tts` 返回 `X-Engine: Phonon-English`。37 个英语嵌入没有放进这次临时目录，所以没有合成 Zoey。Piper 没有 onnx，同一进程对 `{"text":"你好。"}` 返回 503，不是 WAV。Pocket 没有安装 torch，没有做真实合成。这些都不是 3.6GiB 目标机上的数字。

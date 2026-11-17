@@ -1,17 +1,15 @@
-# 草稿。仓库不会把这个单元装到系统里。
-# server.py 的未提交覆盖层还没到，Phonon 也还没接进 POST /api/tts。
-# 在那之前不要 enable 这个单元。
-# 它只描述以后的本机回环进程，不管理 3080 上的 DeepSeek，也不管理 8080 上的 Caddy。
+# 由 deploy/install-local-tts.sh --apply 写到 /etc/systemd/system，并改写路径。
+# 不管理 3080 上的 DeepSeek，也不管理 8080 上的 Caddy。默认不 enable。
 
 [Unit]
-Description=Local TTS API draft (loopback only, not installed)
+Description=Local unified TTS API (loopback only)
 After=network.target
 
 [Service]
 Type=simple
 WorkingDirectory=/opt/local-tts-api/piper-zh-service
 EnvironmentFile=-/etc/local-tts-api.env
-ExecStart=/opt/local-tts-api/piper-zh-service/.venv/bin/python -m piper_zh --host 127.0.0.1 --port 8800 --device cpu
+ExecStart=/opt/local-tts-api/deploy/run-local-tts.sh
 Restart=on-failure
 NoNewPrivileges=true
 PrivateTmp=true

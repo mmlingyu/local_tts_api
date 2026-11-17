@@ -95,7 +95,7 @@ def server():
     httpd.shutdown()
 
 
-def request(base: str, path: str, payload: dict | None = None, method: str | None = None, host: str | None = None, origin: str | None = None):
+def request(base: str, path: str, payload: dict | None = None, method: str | None = None, host: str | None = None, origin: str | None = None, authorization: str | None = None):
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(base + path, data=data, method=method or ("POST" if data else "GET"))
     if data is not None:
@@ -104,6 +104,8 @@ def request(base: str, path: str, payload: dict | None = None, method: str | Non
         req.add_header("Host", host)
     if origin:
         req.add_header("Origin", origin)
+    if authorization:
+        req.add_header("Authorization", authorization)
     try:
         with urllib.request.urlopen(req, timeout=5) as response:
             return response.status, dict(response.headers), response.read()
@@ -116,6 +118,8 @@ def test_cors_keeps_8787_when_piper_uses_another_port():
 
     state = ServiceState(FakeEngine(), 8800)
     assert "http://127.0.0.1:8787" in state.origins()
+    assert "http://127.0.0.1:8133" in state.origins()
+    assert "http://localhost:8133" in state.origins()
     assert "http://127.0.0.1:8800" in state.origins()
     assert "http://example.com:8800" not in state.origins()
 
@@ -486,3 +490,83 @@ def test_voice_cache_drops_the_oldest_and_stays_serial():
     pool.synthesize("Hello again.", voice="en_US-joe-medium")
     assert created[-1] == "en_US-joe-medium"
     assert "fr_FR-siwis-medium" not in pool._engines
+    assert pool.release_all() == 2
+    assert list(pool._engines) == []
+
+
+def test_local_8133_origin_is_allowed_and_token_does_not_disable_host(server):
+    httpd, _engine, base = server
+    status, headers, _body = request(base, "/api/health", origin="http://127.0.0.1:8133")
+    assert status == 200
+    assert headers["Access-Control-Allow-Origin"] == "http://127.0.0.1:8133"
+    httpd.service_state.api_token = "n" * 16
+    status, _headers, body = request(base, "/api/health")
+    assert status == 401
+    assert json.loads(body)["code"] == "unauthorized"
+    status, _headers, body = request(base, "/api/health", authorization="Bearer " + "n" * 16)
+    assert status == 200
+    assert json.loads(body)["access"]["tokenConfigured"] is True
+    port = base.rsplit(":", 1)[1]
+    status, _headers, body = request(
+        base,
+        "/api/health",
+        host=f"example.com:{port}",
+        authorization="Bearer " + "n" * 16,
+    )
+    assert status == 403
+    assert "回环" in json.loads(body)["error"]
+    httpd.service_state.api_token = ""
+
+
+def test_unified_voice_list_keeps_eight_piper_voices(server):
+    _httpd, _engine, base = server
+    piper = json.loads(request(base, "/api/voices")[2])
+    assert len(piper["voices"]) == 8
+    phonon = json.loads(request(base, "/api/voices?engine=phonon")[2])
+    assert phonon["count"] == 38
+    assert phonon["inferenceReady"] is False
+    assert all("url" not in item and "path" not in item for item in phonon["voices"])
+    names = {item["voice"] for item in phonon["voices"]}
+    assert "Zoey" in names and "default" in names
+    combined = json.loads(request(base, "/api/voices?engine=all")[2])
+    assert len(combined["piper"]["voices"]) == 8
+    assert len(combined["phonon"]["voices"]) == 38
+    assert len(combined["pocket"]["voices"]) == 27
+    health = json.loads(request(base, "/api/health")[2])
+    assert health["apiVersion"] == "1.2.0"
+    assert health["engines"]["phonon"]["inferenceReady"] is False
+    assert "http://127.0.0.1:8133" in health["access"]["origins"]
+
+
+def test_phonon_without_checkpoint_returns_json_and_frees_other_engines(server):
+    httpd, engine, base = server
+    calls: list[str] = []
+    engine.release_all = lambda: calls.append("piper") or 0
+    pocket = httpd.service_state.pocket
+    original_close = pocket.close
+
+    def _close() -> None:
+        calls.append("pocket")
+        original_close()
+
+    pocket.close = _close
+    status, headers, body = request(base, "/api/tts", {"engine": "phonon", "text": "Hello.", "voice": "Zoey"})
+    assert status == 503
+    payload = json.loads(body)
+    assert payload["code"] in {"model_missing", "runtime_not_ready", "voice_file_missing"}
+    assert body[:4] != b"RIFF"
+    assert headers["Content-Type"].startswith("application/json")
+    assert calls[:2] == ["piper", "pocket"]
+    status, _headers, body = request(base, "/api/tts", {"engine": "phonon", "text": "你好。", "voice": "Zoey"})
+    assert status == 400
+    assert json.loads(body)["code"] == "han_text"
+    status, _headers, body = request(base, "/api/tts", {"engine": "phonon", "text": "Hello.", "language": "zh"})
+    assert status == 400
+    assert json.loads(body)["code"] == "unsupported_language"
+    status, _headers, body = request(base, "/api/tts", {"engine": "phonon", "text": "Hello.", "voice": "../secret.safetensors"})
+    assert status == 400
+    assert json.loads(body)["code"] == "bad_voice"
+    status, headers, body = request(base, "/api/tts", {"text": "你好。"})
+    assert status == 200
+    assert body[:4] == b"RIFF"
+    assert headers["X-Engine"] == "Piper-zh"

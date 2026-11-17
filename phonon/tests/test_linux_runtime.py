@@ -48,6 +48,21 @@ def test_cpu_and_glibc_requirements():
     assert not cpu_flags_supported({"avx2", "sse2"})
 
 
+def test_http_request_accepts_zoey_and_rejects_chinese():
+    from linux_runtime import parse_http_request
+
+    text, voice_id, name = parse_http_request({"text": "Hello.", "voice": "Zoey", "language": "en"})
+    assert text == "Hello."
+    assert name == "Zoey"
+    assert voice_id == "NbpkqMVS3CJeq2j8"
+    with pytest.raises(RuntimeError_) as caught:
+        parse_http_request({"text": "你好。", "voice": "Zoey"})
+    assert caught.value.code == "han_text"
+    with pytest.raises(RuntimeError_) as caught:
+        parse_http_request({"text": "Hello.", "language": "fr", "voice": "Zoey"})
+    assert caught.value.code == "unsupported_language"
+
+
 def test_text_and_voice_reject_paths_and_chinese():
     with pytest.raises(RuntimeError_) as caught:
         validate_text("你好")

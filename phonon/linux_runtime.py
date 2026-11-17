@@ -244,6 +244,84 @@ def resolve_voice(layout: Layout, voice: object) -> tuple[str, str, Path]:
         raise RuntimeError_("未知英文音色。只接受清单里的 37 个名字或 ID，或 default。", "unknown_voice") from exc
 
 
+def parse_http_request(payload: dict) -> tuple[str, str, str]:
+    """Validate a Phonon JSON object. Returns text, voice id, and voice name.
+
+    The caller cannot supply a model path, command, or URL. File presence is
+    checked later, when a real process would be started.
+    """
+    if not isinstance(payload, dict):
+        raise RuntimeError_("请求必须是 JSON 对象。", "bad_request")
+    if "speaker" in payload:
+        raise RuntimeError_("Phonon 没有 Piper 的 speaker。", "speaker_not_allowed")
+    if "variant" in payload:
+        raise RuntimeError_("variant 只用于 Pocket。Phonon 不会改用别的模型。", "bad_request")
+    raw_language = payload.get("language", "en")
+    if raw_language is None:
+        raw_language = "en"
+    if not isinstance(raw_language, str):
+        raise RuntimeError_("Phonon 只合成英语，不会改用 Piper 或 Pocket。", "unsupported_language")
+    key = raw_language.strip().lower().replace("-", "_")
+    if key not in {"en", "en_us", "english"}:
+        raise RuntimeError_("Phonon 只合成英语，不会改用 Piper 或 Pocket。", "unsupported_language")
+    text = validate_text(payload.get("text"))
+    voice_id, name, _path = resolve_voice(layout_from_env(), payload.get("voice", "default"))
+    return text, voice_id, name
+
+
+def public_voices(layout: Layout | None = None) -> dict:
+    layout = layout or layout_from_env()
+    import json
+
+    manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+    rows = [
+        {
+            "id": "default",
+            "voice": "default",
+            "name": "default",
+            "label": "默认 · default",
+            "locale": "en",
+            "gender": None,
+            "language": "en",
+            "present": _voice_file_ok(layout.model_dir / "default-voice.safetensors", default=True),
+            "official": True,
+        }
+    ]
+    for row in manifest["voices"]:
+        filename = row["filename"]
+        rows.append(
+            {
+                "id": row["id"],
+                "voice": row["name"],
+                "name": row["name"],
+                "label": row.get("label") or row["name"],
+                "locale": row.get("locale"),
+                "gender": row.get("gender"),
+                "language": "en",
+                "present": _voice_file_ok(layout.voices_dir / filename, default=False),
+                "official": True,
+            }
+        )
+    present = sum(1 for row in rows if row["present"])
+    return {
+        "engine": "phonon",
+        "repo": manifest.get("repo"),
+        "revision": manifest.get("revision"),
+        "count": len(rows),
+        "presentCount": present,
+        "voices": rows,
+        "note": "只列出清单里的 default 和 37 个英语音色。没有下载地址，请求不能提交路径。",
+    }
+
+
+def _voice_file_ok(path: Path, default: bool) -> bool:
+    if not path.is_file() or path.stat().st_size <= 0:
+        return False
+    if default:
+        return True
+    return path.stat().st_size == EMBEDDING_BYTES
+
+
 def synthesis_argv(layout: Layout, text: str, voice: object, output: Path) -> list[str]:
     """Build the fixed CPU q8 command. The request cannot change the binary or model."""
     spoken = validate_text(text)

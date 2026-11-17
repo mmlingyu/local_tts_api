@@ -1,9 +1,8 @@
-"""Loopback access rules for a later unified process.
+"""Loopback access rules for the unified TTS process.
 
-server.py does not import this module yet. The uncommitted local server.py
-has not been attached, so these rules are not wired into the running handler.
-They exist so a public hostname cannot be enabled by turning Host, CORS, or
-auth off.
+Host and CORS stay in force. A bearer token is required only when one is
+configured, or when an operator sets a public base URL. Neither case turns
+the host check off. 8133 is kept because that is the user's local page.
 """
 
 from __future__ import annotations
@@ -45,6 +44,8 @@ def compile_access(
         f"http://localhost:{port}",
         "http://127.0.0.1:8787",
         "http://localhost:8787",
+        "http://127.0.0.1:8133",
+        "http://localhost:8133",
     }
     for item in [part.strip() for part in extra_origins.split(",") if part.strip()]:
         if item in {"*", "null"} or "*" in item:
@@ -60,5 +61,5 @@ def compile_access(
         "authorization": "bearer" if token else "loopback-only",
         "tokenConfigured": bool(token),
         "publicBase": base or None,
-        "wiredIntoServer": False,
+        "wiredIntoServer": True,
     }

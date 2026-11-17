@@ -54,6 +54,8 @@ class Synthesis:
     speaker_id: int | None = None
     engine_header: str = "Piper-zh"
     voice_name: str | None = None
+    voice_id: str | None = None
+    peak: float | None = None
 
 
 def wav_duration(blob: bytes) -> tuple[int, float, float]:
@@ -327,6 +329,13 @@ class VoicePool:
             raise RequestError(message, 503, code) from exc
         self._engines[spec.voice_id] = engine
         return engine
+
+    def release_all(self) -> int:
+        """Drop resident Piper voices before another engine loads."""
+        with self._lock:
+            count = len(self._engines)
+            self._engines.clear()
+            return count
 
     def status(self) -> dict:
         loaded = set(self._engines)

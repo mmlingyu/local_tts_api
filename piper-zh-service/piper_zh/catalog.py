@@ -510,8 +510,23 @@ def parse_tts_fields(payload: dict) -> TtsRequest:
     engine = payload.get("engine", "piper")
     if engine is None:
         engine = "piper"
-    if not isinstance(engine, str) or engine not in {"piper", "pocket"}:
-        raise RequestError("engine 只能是 piper 或 pocket。省略时仍是 piper。", 400, "bad_engine")
+    if not isinstance(engine, str) or engine not in {"piper", "pocket", "phonon"}:
+        raise RequestError("engine 只能是 piper、phonon 或 pocket。省略时仍是 piper。", 400, "bad_engine")
+    if engine == "phonon":
+        import sys
+
+        phonon_root = Path(__file__).resolve().parents[2] / "phonon"
+        if str(phonon_root) not in sys.path:
+            sys.path.insert(0, str(phonon_root))
+        from linux_runtime import RuntimeError_ as PhononError
+        from linux_runtime import parse_http_request
+
+        try:
+            text, _voice_id, voice_name = parse_http_request(payload)
+        except PhononError as exc:
+            status = 400 if exc.code != "runtime_not_authentic" else 503
+            raise RequestError(exc.message, status, exc.code) from exc
+        return TtsRequest("phonon", text, "en", voice_name, None, None)
     if engine == "pocket":
         import sys
 

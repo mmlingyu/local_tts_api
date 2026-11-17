@@ -15,7 +15,7 @@
 - [`docs/API.zh-CN.md`](docs/API.zh-CN.md)
 - [`docs/API-INTEGRATION.zh-CN.md`](docs/API-INTEGRATION.zh-CN.md)（第三方应用接入。接口行为以 `dfb62eb` 为准）
 - [`pocket-tts-service/README.zh-CN.md`](pocket-tts-service/README.zh-CN.md)
-- [`deploy/README.zh-CN.md`](deploy/README.zh-CN.md)（Ubuntu 草稿。Phonon 的 Linux 运行时已核对，但还没接进 `POST /api/tts`。本机未提交的 `server.py` 还没附上，不能当成已经部署。）
+- [`deploy/README.zh-CN.md`](deploy/README.zh-CN.md)（Ubuntu 安装。`POST /api/tts` 可选 piper、phonon、pocket。模型仍不在仓库里。）
 
 如果这两份说明与本文件冲突，以「模型未入库、新机器不能直接运行」这条边界为准。
 
